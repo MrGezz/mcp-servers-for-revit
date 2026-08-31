@@ -1,7 +1,4 @@
-using Autodesk.Revit.DB;
-using Autodesk.Revit.DB.Architecture;
-using Autodesk.Revit.UI;
-using RevitMCPCommandSet.Utils;
+﻿using Autodesk.Revit.DB.Architecture;
 using RevitMCPSDK.API.Interfaces;
 
 namespace RevitMCPCommandSet.Services
@@ -81,7 +78,7 @@ namespace RevitMCPCommandSet.Services
                 if (_roomIds != null && _roomIds.Count > 0)
                 {
                     // Get level from specified rooms
-                    var firstRoom = _doc.GetElement(new ElementId(_roomIds[0])) as Room;
+                    var firstRoom = _doc.GetElement(ElementIdFactory.Create(_roomIds[0])) as Room;
                     if (firstRoom != null)
                     {
                         targetLevel = _doc.GetElement(firstRoom.LevelId) as Level;
@@ -163,7 +160,7 @@ namespace RevitMCPCommandSet.Services
                 {
                     // Get specific rooms by ID
                     rooms = _roomIds
-                        .Select(id => _doc.GetElement(new ElementId(id)))
+                        .Select(id => _doc.GetElement(ElementIdFactory.Create(id)))
                         .Where(e => e != null && e is Room)
                         .ToList();
                 }
@@ -294,9 +291,9 @@ namespace RevitMCPCommandSet.Services
                                     roomNumber = room.Number,
                                     location = new
                                     {
-                                        x = roomCenter.X * 304.8, // Convert to mm
-                                        y = roomCenter.Y * 304.8,
-                                        z = roomCenter.Z * 304.8
+                                        x_mm = roomCenter.X * 304.8,
+                                        y_mm = roomCenter.Y * 304.8,
+                                        z_mm = roomCenter.Z * 304.8
                                     }
                                 });
                             }
@@ -334,7 +331,7 @@ namespace RevitMCPCommandSet.Services
             }
             catch (Exception ex)
             {
-                TaskDialog.Show("Error", $"Error tagging rooms: {ex.Message}");
+                Diagnostics.Report("Error", $"Error tagging rooms: {ex.Message}");
                 TaggingResults = new
                 {
                     success = false,
@@ -374,7 +371,7 @@ namespace RevitMCPCommandSet.Services
             // If specific tag type ID was specified, try to use it
             if (!string.IsNullOrEmpty(_tagTypeId) && int.TryParse(_tagTypeId, out int id))
             {
-                ElementId elementId = new ElementId(id);
+                ElementId elementId = ElementIdFactory.Create(id);
                 Element element = doc.GetElement(elementId);
 
                 if (element != null && element is FamilySymbol symbol &&

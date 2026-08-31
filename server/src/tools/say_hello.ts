@@ -5,12 +5,22 @@ import { withRevitConnection } from "../utils/ConnectionManager.js";
 export function registerSayHelloTool(server: McpServer) {
   server.tool(
     "say_hello",
-    "Display a greeting dialog in Revit. Useful for testing the connection between Claude and Revit.",
+    "Test the connection to Revit. By default this does NOT open a dialog: it returns the Revit " +
+      "version and the open document's title, which proves the bridge reached a live session " +
+      "without needing anyone in front of the screen. Set showDialog to open a dialog as well - " +
+      "note that a modal dialog blocks every other command until it is dismissed.",
     {
       message: z
         .string()
         .optional()
-        .describe("Optional custom message to display in the dialog. Defaults to 'Hello MCP!'"),
+        .describe("Message to show when showDialog is true. Defaults to 'Hello MCP!'"),
+      showDialog: z
+        .boolean()
+        .optional()
+        .describe(
+          "Open a modal dialog in Revit (default false). While it is open, the shared " +
+            "ExternalEvent queue is blocked and no other command can run."
+        ),
     },
     async (args, extra) => {
       const params = args;

@@ -5,17 +5,23 @@ import { withRevitConnection } from "../utils/ConnectionManager.js";
 export function registerAnalyzeModelStatisticsTool(server: McpServer) {
   server.tool(
     "analyze_model_statistics",
-    "Analyze model complexity with element counts. Returns detailed statistics about the Revit model including total element counts, total types, total families, views, sheets, counts by category (with type/family breakdown), and level-by-level element distribution. Useful for model auditing, performance analysis, and understanding model composition.",
+    "Analyze model complexity: total elements, types, families, views, sheets, per-category counts and " +
+      "level-by-level distribution. The per-type breakdown inside each category is OMITTED by default - " +
+      "it was 95.2% of a 181,717-character response on a real model and overflowed the client limit. Pass " +
+      "includeDetailedTypes to get it. The type and family COUNTS are always reported.",
     {
       includeDetailedTypes: z
         .boolean()
         .optional()
-        .default(true)
-        .describe("Whether to include detailed breakdown by family and type within each category. Defaults to true."),
+        .default(false)
+        .describe(
+          "Include the per-family/per-type breakdown within each category. Defaults to FALSE: on a real " +
+            "model this was 1,042 entries and 95.2% of the whole response."
+        ),
     },
     async (args, extra) => {
       const params = {
-        includeDetailedTypes: args.includeDetailedTypes ?? true,
+        includeDetailedTypes: args.includeDetailedTypes ?? false,
       };
 
       try {

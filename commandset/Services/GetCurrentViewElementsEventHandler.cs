@@ -1,12 +1,11 @@
-using Autodesk.Revit.UI;
-using RevitMCPCommandSet.Models.Common;
+﻿using RevitMCPCommandSet.Models.Common;
 using RevitMCPSDK.API.Interfaces;
 
 namespace RevitMCPCommandSet.Services
 {
     public class GetCurrentViewElementsEventHandler : IExternalEventHandler, IWaitableExternalEventHandler
     {
-        // 默认模型类别列表
+        // Default model category list
         private readonly List<string> _defaultModelCategories = new List<string>
         {
             "OST_Walls",
@@ -22,7 +21,7 @@ namespace RevitMCPCommandSet.Services
             "OST_MEPSpaces",
             "OST_Rooms"
         };
-        // 默认注释类别列表
+        // Default annotation category list
         private readonly List<string> _defaultAnnotationCategories = new List<string>
         {
             "OST_Dimensions",
@@ -38,22 +37,37 @@ namespace RevitMCPCommandSet.Services
             "OST_TitleBlocks"
         };
 
-        // 查询参数
+        // Query parameters
         private List<string> _modelCategoryList;
         private List<string> _annotationCategoryList;
         private bool _includeHidden;
         private int _limit;
 
-        // 执行结果
-        public ViewElementsResult ResultInfo { get; private set; }
+        // Execution result
+        public ViewElementsResultWithWarning ResultInfo { get; private set; }
 
-        // 状态同步对象
+        // State synchronisation object
         public bool TaskCompleted { get; private set; }
         private readonly ManualResetEvent _resetEvent = new ManualResetEvent(false);
 
-        // 设置查询参数
+        // Set query parameters; throws ArgumentException immediately if any category name is
+        // not a recognised BuiltInCategory member, so the MCP caller receives an explicit
+        // error rather than a silent empty result.
         public void SetQueryParameters(List<string> modelCategoryList, List<string> annotationCategoryList, bool includeHidden, int limit)
         {
+            // Collect all requested names and validate them before raising the external event.
+            List<string> requested = new List<string>();
+            if (modelCategoryList != null) requested.AddRange(modelCategoryList);
+            if (annotationCategoryList != null) requested.AddRange(annotationCategoryList);
+            foreach (string name in requested)
+            {
+                if (!Enum.IsDefined(typeof(BuiltInCategory), name))
+                {
+                    string near = FindNearMatch(name);
+                    string hint = near != null ? $" Did you mean '{near}'?" : string.Empty;
+                    throw new ArgumentException($"Unknown BuiltInCategory name '{name}'.{hint}");
+                }
+            }
             _modelCategoryList = modelCategoryList;
             _annotationCategoryList = annotationCategoryList;
             _includeHidden = includeHidden;
@@ -62,7 +76,7 @@ namespace RevitMCPCommandSet.Services
             _resetEvent.Reset();
         }
 
-        // 实现IWaitableExternalEventHandler接口
+        // Implements IWaitableExternalEventHandler
         public bool WaitForCompletion(int timeoutMilliseconds = 10000)
         {
             _resetEvent.Reset();
@@ -78,7 +92,7 @@ namespace RevitMCPCommandSet.Services
                 var activeView = doc.ActiveView;
 
 
-                // 合并所有类别
+                // Merge all categories
                 List<string> allCategories = new List<string>();
                 if (_modelCategoryList == null && _annotationCategoryList == null)
                 {
@@ -91,17 +105,18 @@ namespace RevitMCPCommandSet.Services
                     allCategories.AddRange(_annotationCategoryList ?? new List<string>());
                 }
 
-                // 获取当前视图中的所有元素
+                // Get all elements in the current view
                 var collector = new FilteredElementCollector(doc, activeView.Id)
                     .WhereElementIsNotElementType();
 
-                // 获取所有元素
+                // Get all elements
                 IList<Element> elements = collector.ToElements();
 
-                // 按类别筛选
+                // Filter by category
+                // All names were validated in SetQueryParameters so Enum.TryParse is expected to succeed for every entry.
+                int resolvedCategoryCount = 0;
                 if (allCategories.Count > 0)
                 {
-                    // 转换字符串类别为枚举
                     List<BuiltInCategory> builtInCategories = new List<BuiltInCategory>();
                     foreach (string categoryName in allCategories)
                     {
@@ -110,7 +125,7 @@ namespace RevitMCPCommandSet.Services
                             builtInCategories.Add(category);
                         }
                     }
-                    // 如果成功解析了类别，则使用类别过滤器
+                    resolvedCategoryCount = builtInCategories.Count;
                     if (builtInCategories.Count > 0)
                     {
                         ElementMulticategoryFilter categoryFilter = new ElementMulticategoryFilter(builtInCategories);
@@ -121,48 +136,57 @@ namespace RevitMCPCommandSet.Services
                     }
                 }
 
-                // 过滤隐藏的元素
+                // Filter out hidden elements
                 if (!_includeHidden)
                 {
                     elements = elements.Where(e => !e.IsHidden(activeView)).ToList();
                 }
 
-                // 限制返回数量
+                // Limit the number of returned elements
                 if (_limit > 0 && elements.Count > _limit)
                 {
                     elements = elements.Take(_limit).ToList();
                 }
 
-                // 构建结果
+                // Build the result
                 var elementInfos = elements.Select(e => new ElementInfo
                 {
-#if REVIT2024_OR_GREATER
-                    Id = e.Id.Value,
-#else
-                    Id = e.Id.IntegerValue,
-#endif
+                    Id = e.Id.GetValue(),
                     UniqueId = e.UniqueId,
                     Name = e.Name,
-                    Category = e.Category?.Name ?? "unknow",
+                    Category = e.Category?.Name ?? "unknown",
                     Properties = GetElementProperties(e)
                 }).ToList();
 
-                ResultInfo = new ViewElementsResult
+                // When a category filter was applied and resolved but found nothing, include
+                // an explicit warning so the caller can distinguish an empty model from a bad request.
+                string warning = (allCategories.Count > 0 && resolvedCategoryCount > 0 && elementInfos.Count == 0)
+                    ? $"The requested categor{(allCategories.Count == 1 ? "y" : "ies")} resolved correctly ({string.Join(", ", allCategories)}) but matched no elements in the current view."
+                    : null;
+
+                ResultInfo = new ViewElementsResultWithWarning
                 {
-#if REVIT2024_OR_GREATER
-                    ViewId = activeView.Id.Value,
-#else
-                    ViewId = activeView.Id.IntegerValue,
-#endif
+                    ViewId = activeView.Id.GetValue(),
                     ViewName = activeView.Name,
                     TotalElementsInView = new FilteredElementCollector(doc, activeView.Id).GetElementCount(),
                     FilteredElementCount = elementInfos.Count,
-                    Elements = elementInfos
+                    Elements = elementInfos,
+                    Warning = warning
                 };
             }
             catch (Exception ex)
             {
-                TaskDialog.Show("error", ex.Message);
+                Diagnostics.Report("error", ex.Message);
+
+                // ResultInfo was previously left NULL here, and the command returned that
+                // null to the caller with no error - a failure that looked like an empty
+                // answer. Report it.
+                ResultInfo = new ViewElementsResultWithWarning
+                {
+                    FilteredElementCount = 0,
+                    Elements = new List<ElementInfo>(),
+                    Warning = "Failed to read the current view: " + ex.Message
+                };
             }
             finally
             {
@@ -175,12 +199,8 @@ namespace RevitMCPCommandSet.Services
         {
             var properties = new Dictionary<string, string>();
 
-            // 添加通用属性
-#if REVIT2024_OR_GREATER
-            properties.Add("ElementId", element.Id.Value.ToString());
-#else
-            properties.Add("ElementId", element.Id.IntegerValue.ToString());
-#endif
+            // Add common properties
+            properties.Add("ElementId", element.Id.GetValue().ToString());
             if (element.Location != null)
             {
                 if (element.Location is LocationPoint locationPoint)
@@ -199,7 +219,7 @@ namespace RevitMCPCommandSet.Services
                 }
             }
 
-            // 获取常用参数值
+            // Retrieve common parameter values
             var commonParams = new[] { "Comments", "Mark", "Level", "Family", "Type" };
             foreach (var paramName in commonParams)
             {
@@ -213,20 +233,65 @@ namespace RevitMCPCommandSet.Services
                     else if (param.StorageType == StorageType.Integer)
                         properties.Add(paramName, param.AsInteger().ToString());
                     else if (param.StorageType == StorageType.ElementId)
-#if REVIT2024_OR_GREATER
-                        properties.Add(paramName, param.AsElementId().Value.ToString());
-#else
-                        properties.Add(paramName, param.AsElementId().IntegerValue.ToString());
-#endif
+                        properties.Add(paramName, param.AsElementId().GetValue().ToString());
                 }
             }
 
             return properties;
         }
 
+        // Compute the Levenshtein edit distance between two strings using a two-row rolling array.
+        private static int LevenshteinDistance(string a, string b)
+        {
+            if (a.Length == 0) return b.Length;
+            if (b.Length == 0) return a.Length;
+            int[] prev = new int[b.Length + 1];
+            int[] curr = new int[b.Length + 1];
+            for (int j = 0; j <= b.Length; j++) prev[j] = j;
+            for (int i = 1; i <= a.Length; i++)
+            {
+                curr[0] = i;
+                for (int j = 1; j <= b.Length; j++)
+                {
+                    curr[j] = Math.Min(
+                        Math.Min(curr[j - 1] + 1, prev[j] + 1),
+                        prev[j - 1] + (a[i - 1] == b[j - 1] ? 0 : 1));
+                }
+                int[] tmp = prev; prev = curr; curr = tmp;
+            }
+            return prev[b.Length];
+        }
+
+        // Return the closest BuiltInCategory name to the supplied unrecognised string, or null
+        // when no candidate is within a plausible typo distance (five edits or fewer).
+        private static string FindNearMatch(string bad)
+        {
+            string[] allNames = Enum.GetNames(typeof(BuiltInCategory));
+            int bestDist = int.MaxValue;
+            string bestName = null;
+            foreach (string name in allNames)
+            {
+                int dist = LevenshteinDistance(bad, name);
+                if (dist < bestDist)
+                {
+                    bestDist = dist;
+                    bestName = name;
+                }
+            }
+            return bestDist <= 5 ? bestName : null;
+        }
+
         public string GetName()
         {
-            return "获取当前视图元素";
+            return "Get Current View Elements";
         }
+    }
+
+    // ViewElementsResult extended with an optional warning message.
+    // A non-null Warning means the category filter resolved but matched nothing in the view;
+    // an unrecognised category name is surfaced as an ArgumentException before any result is built.
+    public class ViewElementsResultWithWarning : ViewElementsResult
+    {
+        public string Warning { get; set; }
     }
 }

@@ -1,6 +1,5 @@
-using Autodesk.Revit.DB;
-using Autodesk.Revit.DB.Architecture;
-using Autodesk.Revit.UI;
+﻿using Autodesk.Revit.DB.Architecture;
+using RevitMCPCommandSet.Models.Common;
 using RevitMCPCommandSet.Models.DataExtraction;
 using RevitMCPSDK.API.Interfaces;
 
@@ -11,7 +10,7 @@ namespace RevitMCPCommandSet.Services.DataExtraction
         private bool _includeUnplacedRooms;
         private bool _includeNotEnclosedRooms;
 
-        public ExportRoomDataResult ResultInfo { get; private set; }
+        public AIResult<ExportRoomDataResult> ResultInfo { get; private set; }
         public bool TaskCompleted { get; private set; }
         private readonly ManualResetEvent _resetEvent = new ManualResetEvent(false);
 
@@ -55,11 +54,7 @@ namespace RevitMCPCommandSet.Services.DataExtraction
 
                     var roomData = new RoomDataModel
                     {
-#if REVIT2024_OR_GREATER
-                        Id = room.Id.Value,
-#else
-                        Id = room.Id.IntegerValue,
-#endif
+                        Id = room.Id.GetValue(),
                         UniqueId = room.UniqueId,
                         Name = room.get_Parameter(BuiltInParameter.ROOM_NAME)?.AsString() ?? "",
                         Number = room.Number ?? "",
@@ -78,18 +73,38 @@ namespace RevitMCPCommandSet.Services.DataExtraction
                     totalArea += room.Area;
                 }
 
-                ResultInfo = new ExportRoomDataResult
+                // Two fixes here.
+                //
+                // 1. Exporting zero rooms is not a success: every room can be dropped by
+                //    the unplaced / not-enclosed filters, and the caller was told the
+                //    export worked.
+                // 2. ExportRoomDataResult carries its OWN success/message properties. Left
+                //    unset inside an AIResult envelope they serialise as success:false /
+                //    message:null, contradicting the outer Success on every successful
+                //    call. They are set to agree.
+                bool exported = rooms.Count > 0;
+                string exportMessage = exported
+                    ? $"Exported {rooms.Count} room(s)."
+                    : "No rooms were exported. The document may contain no placed, enclosed rooms, " +
+                      "or every room was filtered out.";
+
+                ResultInfo = new AIResult<ExportRoomDataResult>
                 {
-                    TotalRooms = rooms.Count,
-                    TotalArea = totalArea,
-                    Rooms = rooms,
-                    Success = true,
-                    Message = $"Successfully exported {rooms.Count} rooms"
+                    Success = exported,
+                    Message = exportMessage,
+                    Response = new ExportRoomDataResult
+                    {
+                        Success = exported,
+                        Message = exportMessage,
+                        TotalRooms = rooms.Count,
+                        TotalArea = totalArea,
+                        Rooms = rooms
+                    }
                 };
             }
             catch (Exception ex)
             {
-                ResultInfo = new ExportRoomDataResult
+                ResultInfo = new AIResult<ExportRoomDataResult>
                 {
                     Success = false,
                     Message = $"Error exporting room data: {ex.Message}"

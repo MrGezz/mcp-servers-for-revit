@@ -1,4 +1,4 @@
-using Autodesk.Revit.DB;
+﻿using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using RevitMCPSDK.API.Interfaces;
 
@@ -6,17 +6,25 @@ namespace RevitMCPCommandSet.Services
 {
     public class DeleteElementEventHandler : IExternalEventHandler, IWaitableExternalEventHandler
     {
-        // 执行结果
+        // Execution result
         public bool IsSuccess { get; private set; }
 
-        // 成功删除的元素数量
+        // Number of elements successfully deleted
         public int DeletedCount { get; private set; }
-        // 状态同步对象
+
+        // Why a request did not fully succeed. Returned to the caller instead of
+        // being shown in a modal dialog: a TaskDialog raised here blocks the
+        // ExternalEvent queue that every other command shares, so one bad id used
+        // to take the whole bridge down and report it to the client as a timeout.
+        public List<string> UnparseableIds { get; private set; } = new List<string>();
+        public List<string> MissingIds { get; private set; } = new List<string>();
+        public string ErrorMessage { get; private set; }
+        // State synchronization object
         public bool TaskCompleted { get; private set; }
         private readonly ManualResetEvent _resetEvent = new ManualResetEvent(false);
-        // 要删除的元素ID数组
+        // Array of element IDs to delete
         public string[] ElementIds { get; set; }
-        // 实现IWaitableExternalEventHandler接口
+        // IWaitableExternalEventHandler interface implementation
         public bool WaitForCompletion(int timeoutMilliseconds = 10000)
         {
             _resetEvent.Reset();
@@ -33,37 +41,46 @@ namespace RevitMCPCommandSet.Services
                     IsSuccess = false;
                     return;
                 }
-                // 创建待删除元素ID集合
+                // Build the list of element IDs to delete
                 List<ElementId> elementIdsToDelete = new List<ElementId>();
                 List<string> invalidIds = new List<string>();
+                UnparseableIds.Clear();
+                MissingIds.Clear();
+                ErrorMessage = null;
+
                 foreach (var idStr in ElementIds)
                 {
                     if (int.TryParse(idStr, out int elementIdValue))
                     {
-                        var elementId = new ElementId(elementIdValue);
-                        // 检查元素是否存在
+                        var elementId = ElementIdFactory.Create(elementIdValue);
                         if (doc.GetElement(elementId) != null)
                         {
                             elementIdsToDelete.Add(elementId);
                         }
+                        else
+                        {
+                            // Previously dropped in silence: only UNPARSEABLE strings were
+                            // recorded, so a well-formed id for an element that is not there
+                            // vanished without trace while the message claimed to cover it.
+                            MissingIds.Add(idStr);
+                        }
                     }
                     else
                     {
-                        invalidIds.Add(idStr);
+                        UnparseableIds.Add(idStr);
                     }
                 }
-                if (invalidIds.Count > 0)
-                {
-                    TaskDialog.Show("警告", $"以下ID无效或元素不存在：{string.Join(", ", invalidIds)}");
-                }
-                // 如果有可删除的元素，则执行删除
+
+                invalidIds.AddRange(UnparseableIds);
+                invalidIds.AddRange(MissingIds);
+                // If there are elements to delete, proceed
                 if (elementIdsToDelete.Count > 0)
                 {
                     using (var transaction = new Transaction(doc, "Delete Elements"))
                     {
                         transaction.Start();
 
-                        // 批量删除元素
+                        // Delete all elements in a single batch
                         ICollection<ElementId> deletedIds = doc.Delete(elementIdsToDelete);
                         DeletedCount = deletedIds.Count;
 
@@ -73,13 +90,13 @@ namespace RevitMCPCommandSet.Services
                 }
                 else
                 {
-                    TaskDialog.Show("错误", "没有有效的元素可以删除");
+                    ErrorMessage = BuildIdReport("No elements were deleted");
                     IsSuccess = false;
                 }
             }
             catch (Exception ex)
             {
-                TaskDialog.Show("错误", "删除元素失败: " + ex.Message);
+                ErrorMessage = "Failed to delete elements: " + ex.Message;
                 IsSuccess = false;
             }
             finally
@@ -88,9 +105,21 @@ namespace RevitMCPCommandSet.Services
                 _resetEvent.Set();
             }
         }
+        // One sentence naming exactly which ids failed and why, so the caller can
+        // correct the request instead of guessing at a timeout.
+        private string BuildIdReport(string prefix)
+        {
+            var parts = new List<string>();
+            if (UnparseableIds.Count > 0)
+                parts.Add("not valid element ids: " + string.Join(", ", UnparseableIds));
+            if (MissingIds.Count > 0)
+                parts.Add("no such element in this document: " + string.Join(", ", MissingIds));
+            return parts.Count == 0 ? prefix : prefix + " - " + string.Join("; ", parts) + ".";
+        }
+
         public string GetName()
         {
-            return "删除元素";
+            return "Delete Elements";
         }
     }
 }

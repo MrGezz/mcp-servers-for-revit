@@ -1,4 +1,4 @@
-using Autodesk.Revit.UI;
+﻿using Autodesk.Revit.UI;
 using Newtonsoft.Json.Linq;
 using RevitMCPSDK.API.Base;
 using RevitMCPCommandSet.Services;
@@ -31,10 +31,20 @@ namespace RevitMCPCommandSet.Commands.Test
                     }
 
                     _handler.Message = message;
+                    // Opt-in, because a dialog blocks the shared ExternalEvent queue
+                    // until somebody dismisses it.
+                    _handler.ShowDialog = parameters?["showDialog"]?.ToObject<bool>() ?? false;
 
                     if (RaiseAndWaitForCompletion(15000))
                     {
-                        return new { success = true, message = message };
+                        return new
+                        {
+                            success = true,
+                            message,
+                            dialogShown = _handler.DialogShown,
+                            revitVersion = _handler.RevitVersion,
+                            document = _handler.DocumentTitle
+                        };
                     }
                     else
                     {

@@ -34,34 +34,20 @@ export function registerAIElementFilterTool(server: McpServer) {
           .describe("Determines whether to only return elements that are visible in the current view. When set to true, only elements visible in the current view will be returned. Note: This filter only applies to element instances, not type elements."),
         boundingBoxMin: z
           .object({
-            p0: z.object({
-              x: z.number().describe("X coordinate of start point"),
-              y: z.number().describe("Y coordinate of start point"),
-              z: z.number().describe("Z coordinate of start point"),
-            }),
-            p1: z.object({
-              x: z.number().describe("X coordinate of end point"),
-              y: z.number().describe("Y coordinate of end point"),
-              z: z.number().describe("Z coordinate of end point"),
-            }),
+            x: z.number().describe("X coordinate of the minimum corner (mm)"),
+            y: z.number().describe("Y coordinate of the minimum corner (mm)"),
+            z: z.number().describe("Z coordinate of the minimum corner (mm)"),
           })
           .optional()
-          .describe("The minimum point coordinates (in mm) for spatial bounding box filtering. When set along with boundingBoxMax, only elements that intersect with this bounding box will be returned. Set to null to disable this filter."),
+          .describe("The minimum corner point (in mm) of the bounding box for spatial filtering. When set along with boundingBoxMax, only elements intersecting this box are returned. Maps directly to FilterSetting.BoundingBoxMin (JZPoint with X/Y/Z) on the C# side."),
         boundingBoxMax: z
           .object({
-            p0: z.object({
-              x: z.number().describe("X coordinate of start point"),
-              y: z.number().describe("Y coordinate of start point"),
-              z: z.number().describe("Z coordinate of start point"),
-            }),
-            p1: z.object({
-              x: z.number().describe("X coordinate of end point"),
-              y: z.number().describe("Y coordinate of end point"),
-              z: z.number().describe("Z coordinate of end point"),
-            }),
+            x: z.number().describe("X coordinate of the maximum corner (mm)"),
+            y: z.number().describe("Y coordinate of the maximum corner (mm)"),
+            z: z.number().describe("Z coordinate of the maximum corner (mm)"),
           })
           .optional()
-          .describe("The maximum point coordinates (in mm) for spatial bounding box filtering. When set along with boundingBoxMin, only elements that intersect with this bounding box will be returned. Set to null to disable this filter."),
+          .describe("The maximum corner point (in mm) of the bounding box for spatial filtering. When set along with boundingBoxMin, only elements intersecting this box are returned. Maps directly to FilterSetting.BoundingBoxMax (JZPoint with X/Y/Z) on the C# side."),
           maxElements: z
           .number()
           .optional()

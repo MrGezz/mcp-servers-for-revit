@@ -1,4 +1,4 @@
-using Autodesk.Revit.UI;
+﻿using Autodesk.Revit.UI;
 using Newtonsoft.Json.Linq;
 using RevitMCPCommandSet.Services.DataExtraction;
 using RevitMCPSDK.API.Base;
@@ -21,7 +21,10 @@ namespace RevitMCPCommandSet.Commands.DataExtraction
             try
             {
                 // Parse parameters
-                bool includeDetailedTypes = parameters?["includeDetailedTypes"]?.Value<bool>() ?? true;
+                // Default FALSE, matching the handler and the tool schema. This response was
+                // measured at 181,717 characters, 95.2% of it the per-type breakdown, and it
+                // overflowed the client limit on an ordinary model.
+                bool includeDetailedTypes = parameters?["includeDetailedTypes"]?.Value<bool>() ?? false;
 
                 // Set parameters
                 _handler.SetParameters(includeDetailedTypes);

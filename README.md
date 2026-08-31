@@ -30,9 +30,35 @@ The **MCP Server** (TypeScript) translates tool calls from AI clients into WebSo
 ## Requirements
 
 - **Node.js 18+** (for the MCP server)
-- **Autodesk Revit 2020 - 2026** (any supported version)
+- **Autodesk Revit 2020 - 2027** (any supported version)
 
-## Quick Start (Using a Release)
+## Quick Start (Installer)
+
+Download `mcp-servers-for-revit-<version>-Setup.exe` from the
+[Releases](https://github.com/mcp-servers-for-revit/mcp-servers-for-revit/releases) page and run it.
+
+It ticks the Revit versions it finds on the machine, refuses to run while Revit
+is open (the add-in DLLs are loaded and cannot be replaced), and installs to
+`%AppData%\Autodesk\Revit\Addins\<year>\` with no administrator rights.
+
+**Use the installer rather than the ZIP if you can.** Windows marks files
+extracted from a downloaded archive, and the .NET loader then refuses the DLL
+with `FileLoadException ... HRESULT 0x80131515`, which Revit reports only as
+"cannot run the external application". Measured on Windows 11:
+
+| How the payload arrives | Mark left on the DLL |
+| --- | --- |
+| ZIP, extracted with Explorer's **Extract All** | `ZoneId=3` — the add-in fails to load |
+| ZIP, extracted with PowerShell `Expand-Archive` | none |
+| **Setup.exe** | none |
+
+That difference is why the failure looks intermittent between users. The
+installer avoids it entirely; if you use the ZIP, unblock it *before* extracting.
+
+Then register the MCP server with your AI client — see
+[MCP Server Setup](#mcp-server-setup). The Revit add-in is only half of it.
+
+## Quick Start (Using a Release ZIP)
 
 1. Download the ZIP for your Revit version from the [Releases](https://github.com/mcp-servers-for-revit/mcp-servers-for-revit/releases) page (e.g., `mcp-servers-for-revit-v1.0.0-Revit2025.zip`)
 
@@ -61,6 +87,25 @@ The **MCP Server** (TypeScript) translates tool calls from AI clients into WebSo
 
 5. In Revit, click the **Settings** button on the mcp-servers-for-revit ribbon tab, enable the commands you want to use, and click **Save**
 
+   Do this **before** step 6. This dialog is what writes the command registry.
+   A server opened before it has been saved registers **no commands at all** and
+   still reports itself as running — every tool then answers
+   `Method '...' not found`.
+
+6. Click **Revit MCP Switch** on the same ribbon tab. A dialog confirms *Open Server*.
+
+   The switch is a toggle, and commands are bound when the server *opens*. If you
+   change which commands are enabled, switch it off and on again to reload them.
+
+7. Check it from your AI client by asking it to call `get_current_view_info`. It
+   should return the active view.
+
+   | What you see | What it means |
+   | --- | --- |
+   | The active view is returned | Working |
+   | `Method '...' not found` | Step 5 was skipped, or step 6 ran before it — save in Settings, then toggle the switch off and on |
+   | Connection refused / `ECONNREFUSED` | The switch is off, or Revit is not running |
+
 ## MCP Server Setup
 
 The MCP server is published as an npm package and can be run directly with `npx`.
@@ -70,8 +115,44 @@ The MCP server is published as an npm package and can be run directly with `npx`
 Run this in a **terminal** (not inside Claude Code):
 
 ```bash
-claude mcp add mcp-server-for-revit -- cmd /c npx -y mcp-server-for-revit
+claude mcp add --scope user mcp-server-for-revit -- cmd /c npx -y mcp-server-for-revit
 ```
+
+`--scope user` registers the server for every project. Without it the scope
+defaults to `local`, which registers it only for the directory the command was
+run in — which is why the tools sometimes appear in one project and are missing
+in the next.
+
+**If `claude` is not found, the CLI is not on your `PATH`.** Installed and
+on the `PATH` are not the same thing, so check rather than assume:
+
+```bash
+claude --version
+```
+
+If that fails you have two options. Either call the executable by its full path —
+the Windows native install puts it at
+`%AppData%\Claude\claude-code\<version>\claude.exe` — or skip the CLI and add
+the entry by hand to `~/.claude/settings.json`
+(`%UserProfile%\.claude\settings.json` on Windows):
+
+```json
+{
+    "mcpServers": {
+        "mcp-server-for-revit": {
+            "command": "cmd",
+            "args": ["/c", "npx", "-y", "mcp-server-for-revit"]
+        }
+    }
+}
+```
+
+Merge that into the existing `mcpServers` object rather than replacing the file,
+and restart Claude Code afterwards.
+
+**On macOS and Linux, drop the `cmd /c`** and use `-- npx -y mcp-server-for-revit`.
+The wrapper is needed only on Windows, where `npx` is a `.cmd` shim and cannot be
+launched directly as a process.
 
 **Claude Desktop**
 
@@ -111,33 +192,242 @@ If using a release ZIP, the command set is pre-installed inside the plugin. For 
 
 ## Supported Tools
 
+### General
+
 | Tool | Description |
 | ---- | ----------- |
-| `get_current_view_info` | Get current active view info |
+| `say_hello` | Display a greeting dialog in Revit (connection test) |
+| `send_code_to_revit` | Send C# code to Revit to execute via Roslyn |
+
+### Query & Selection
+
+| Tool | Description |
+| ---- | ----------- |
+| `get_current_view_info` | Get current active view info (name, type, scale, detail level) |
 | `get_current_view_elements` | Get elements from the current active view |
-| `get_available_family_types` | Get available family types in current project |
 | `get_selected_elements` | Get currently selected elements |
-| `get_material_quantities` | Calculate material quantities and takeoffs |
-| `ai_element_filter` | Intelligent element querying tool for AI assistants |
-| `analyze_model_statistics` | Analyze model complexity with element counts |
-| `create_point_based_element` | Create point-based elements (door, window, furniture) |
-| `create_line_based_element` | Create line-based elements (wall, beam, pipe) |
-| `create_surface_based_element` | Create surface-based elements (floor, ceiling, roof) |
+| `get_available_family_types` | Get available family types in current project |
+| `ai_element_filter` | Intelligent element querying tool with multiple filter criteria |
+| `query_parameters` | Get all parameters of an element with name, value, and storage type |
+| `query_geometry` | Get geometry of an element including bounding box, solids, and faces |
+| `query_references` | Get stable geometric references for dimensioning and tagging |
+| `check_interferences` | Check interference collisions between specified elements |
+| `query_view_range` | Get the view range of a plan view |
+
+### Create — Architecture
+
+| Tool | Description |
+| ---- | ----------- |
+| `create_wall` | Create walls with start/end points, height, thickness, and type |
+| `create_floor` | Create floors with boundary polygon, thickness, and level |
+| `create_ceiling` | Create ceilings with boundary, level, and thickness |
+| `create_roof` | Create roofs with type (flat/pitched), boundary, and slope |
+| `create_column` | Create architectural or structural columns at specified locations |
+| `create_stair` | Create stairs with base/top level, width, riser, tread, and landings |
+| `create_ramp` | Create ramps with base/top level and width |
+| `create_railing` | Create railings along a path with height and type |
+| `create_opening` | Create openings in walls, floors, or shafts |
+| `create_model_curve` | Create model lines between start and end points |
+| `create_reference_plane` | Create reference planes with start/end and normal direction |
+| `create_group` | Create a group from selected element IDs |
 | `create_grid` | Create a grid system with smart spacing generation |
 | `create_level` | Create levels at specified elevations |
 | `create_room` | Create and place rooms at specified locations |
-| `create_dimensions` | Create dimension annotations in the current view |
 | `create_structural_framing_system` | Create a structural beam framing system |
-| `delete_element` | Delete elements by ID |
-| `operate_element` | Operate on elements (select, setColor, hide, etc.) |
-| `color_elements` | Color elements based on a parameter value |
+| `create_line_based_element` | Create line-based elements (wall, beam, pipe) — generic |
+| `create_point_based_element` | Create point-based elements (door, window, furniture) — generic |
+| `create_surface_based_element` | Create surface-based elements (floor, ceiling, roof) — generic |
+
+### Create — MEP
+
+| Tool | Description |
+| ---- | ----------- |
+| `create_duct` | Create ducts with start/end points, width, height, and system type |
+| `create_pipe` | Create pipes with start/end points, diameter, and system type |
+| `create_conduit` | Create conduits with start/end points and diameter |
+| `create_equipment` | Place MEP equipment at specified locations with rotation |
+| `create_space` | Create MEP spaces at specified locations |
+| `create_direct_shape` | Create primitive solid geometry (box, cylinder, extrusion) as DirectShape |
+| `create_swept_shape` | Create swept solids along a path with section profiles |
+| `create_mep_curve` | Create MEP curve elements (duct/pipe/conduit) — multi-type |
+| `connect_mep` | Connect two MEP elements by their connectors |
+| `create_mep_system` | Create MEP systems from selected elements |
+
+### Annotation
+
+| Tool | Description |
+| ---- | ----------- |
+| `create_dimensions` | Create dimension annotations between elements or points |
+| `create_text_note` | Create text notes in views with content, position, and alignment |
+| `create_tag` | Create independent tags for elements (doors, windows, walls, rooms) |
 | `tag_all_walls` | Tag all walls in the current view |
 | `tag_all_rooms` | Tag all rooms in the current view |
+| `create_filled_region` | Create a filled region in a view with boundary points |
+| `create_revision` | Create a revision record with name, date, and number |
+| `create_revision_cloud` | Create a revision cloud in a view associated with a revision |
+
+### Views & Sheets
+
+| Tool | Description |
+| ---- | ----------- |
+| `create_view` | Create views (floor plan, ceiling plan, elevation, section, 3D) |
+| `create_drafting_view` | Create a drafting view with specified name and scale |
+| `create_section_view` | Create a section view with bounding box |
+| `create_elevation_view` | Create an elevation view at a direction index |
+| `create_callout` | Create a callout view from a host view |
+| `duplicate_view` | Duplicate a view with duplicate, with detailing, or dependent mode |
+| `create_view_template` | Create a view template from a source view |
+| `create_sheet` | Create sheets with number, name, and optional title block |
+| `place_view_on_sheet` | Place a view onto a sheet at a specified location |
+| `create_schedule` | Create schedules (regular, material, keynote, view/sheet/revision list) |
+| `place_schedule_on_sheet` | Place an existing schedule on a sheet |
+| `create_detail_curve` | Create detail lines in a view |
+| `set_view_properties` | Set view properties (scale, detail level, crop box, display style, template) |
+| `set_category_overrides` | Set graphic overrides for a category in a view |
+| `manage_view_filters` | Add or remove view filters with visibility and overrides |
+| `set_view_range` | Set the plan view range offsets |
+| `manage_schedule_fields` | Add, remove, reorder, or hide schedule fields |
+| `manage_graphics_resources` | Manage line styles and fill patterns |
+
+### Modify
+
+| Tool | Description |
+| ---- | ----------- |
+| `operate_element` | Operate on elements (select, setColor, hide, isolate, etc.) |
+| `color_elements` | Color elements based on a parameter value |
+| `delete_element` | Delete elements by ID |
+| `set_parameters` | Batch set parameters on elements with key-value pairs |
+| `transform_elements` | Move, copy, rotate, or mirror elements |
+| `rename_element` | Rename a Revit element (level, grid, view, type) |
+| `set_element_curve` | Modify location curve of linear elements |
+| `duplicate_type` | Duplicate an element type with a new name |
+| `manage_family_parameters` | Add, rename, remove, or set formulas on family parameters |
+| `manage_project_parameters` | List or add shared parameters to the project |
+
+### Family
+
+| Tool | Description |
+| ---- | ----------- |
+| `load_family` | Load a family .rfa file into the current project |
+| `place_family_instance` | Place family instances (unhosted, hosted, face-based, workplane-based) |
+
+### Analysis & Data
+
+| Tool | Description |
+| ---- | ----------- |
+| `analyze_model_statistics` | Analyze model complexity with element counts by category, type, family, and level |
 | `export_room_data` | Export all room data from the project |
-| `store_project_data` | Store project metadata in local database |
-| `store_room_data` | Store room metadata in local database |
+| `get_material_quantities` | Calculate material quantities and takeoffs |
+| `export_views` | Export views to files (PNG, JPG, DWG, DXF, IFC) |
+
+### Document
+
+| Tool | Description |
+| ---- | ----------- |
+| `save_document` | Save the current Revit document |
+
+### Stored project data
+
+| Tool | Description |
+| ---- | ----------- |
+| `store_project_data` | Store project metadata in the open model |
+| `store_room_data` | Store room metadata in the open model, linked to its project |
 | `query_stored_data` | Query stored project and room data |
-| `send_code_to_revit` | Send C# code to Revit to execute |
+
+These three no longer use a local SQLite file. They write through the project
+memory layer below, into the Revit document itself. See **Memory** for why.
+
+### Memory
+
+Two layers, both package-wide.
+
+**Knowledge memory** is durable and user-scoped: node chains, API recipes, tool
+behaviour, team conventions, and anything bulk-loaded from a document. It answers
+"have we worked this out before?" so a session does not research it again. It needs
+no Revit connection.
+
+| Tool | Description |
+| ---- | ----------- |
+| `knowledge_search` | Search stored knowledge across every namespace, with the matched terms returned |
+| `knowledge_get` | Read one knowledge unit in full |
+| `knowledge_add` | Store something worth not re-deriving, with its failure mode |
+| `knowledge_ingest` | Bulk-load a `.md`, `.txt`, `.json` or `.csv` reference document into searchable units |
+| `knowledge_stats` | What the store holds and where it lives on disk |
+
+**Project memory** is model-scoped: an entity/relation graph written INTO the Revit
+document through Extensible Storage, so it travels with the file through Save As,
+worksharing and transmittal instead of desynchronising from it.
+
+| Tool | Description |
+| ---- | ----------- |
+| `project_memory_write` | Record entities and relations about this model |
+| `project_memory_query` | Search them, reporting how many were searched as well as how many matched |
+| `project_memory_stats` | Counts by kind, and where the graph is stored |
+| `project_memory_clear` | Remove the graph from the model (requires `confirm: true`) |
+
+The older `store_project_data`, `store_room_data` and `query_stored_data` still work
+and now write through this layer. They previously used a SQLite file resolved
+relative to the package directory, which under `npx -y` lives inside the npm cache -
+so data described as persisted was sitting in storage npm may clear without warning.
+
+### Dynamo
+
+Read and write Dynamo graphs, and drive Dynamo inside a running Revit.
+
+The first three work entirely from the `.dyn` file — **Revit does not need to be running**,
+and Dynamo does not need to be installed.
+
+| Tool | Description |
+| ---- | ----------- |
+| `dynamo_read_graph` | Explain a `.dyn`/`.dyf`: every node with what feeds it and what it feeds, Python and Code Block bodies, Player inputs, package dependencies, structural problems |
+| `dynamo_list_graphs` | List the graphs under a folder, optionally with each one's name, description, node count and packages |
+| `dynamo_edit_graph` | Apply edits to a graph: rewrite Python/Code Block bodies, rewire nodes, change input values, add or remove nodes, rename and reposition |
+| `dynamo_status` | Report whether Dynamo can be driven in the running Revit, and which graph is open |
+| `dynamo_run_graph` | Open a graph in Dynamo and, with `confirm: true`, run it |
+
+**Editing preserves the file.** A graph is mutated in place and written back with everything
+the editor did not touch left exactly as it was — including the `View` block that holds the
+canvas layout, and including numeric literals, so a one-value change produces a one-line diff
+rather than a few hundred. This is verified against a corpus of real graphs by
+`server/src/dynamo/selfTest.ts`:
+
+```bash
+node build/dynamo/selfTest.js /path/to/a/folder/of/graphs
+```
+
+**Running a graph cannot be undone.** Every other write in this project can be wrapped in a
+Revit transaction and rolled back. A Dynamo graph opens and commits its own transactions, so
+there is nothing to roll back into — `dynamo_run_graph` requires `confirm: true` rather than
+offering a dry run that could not work.
+
+#### Live backends
+
+`dynamo_status` and `dynamo_run_graph` need a live Revit session. By default they use
+this project's own plugin socket — nothing else is required.
+
+| Backend | Transport | Needs |
+| ------- | --------- | ----- |
+| `native` (default) | this project's plugin socket, via the `dynamo_op` command | the add-in loaded and the MCP Switch on |
+| `http` (optional) | `POST` to a URL you configure | `REVIT_MCP_DYNAMO_HTTP_URL` set to your own bridge |
+
+The `http` backend is an escape hatch for sites that already run their own bridge into
+Revit. It is off unless you set the URL, and this project ships no such endpoint.
+The contract is deliberately tiny:
+
+```http
+POST <REVIT_MCP_DYNAMO_HTTP_URL>
+Content-Type: application/json
+
+{ "op": "status" | "open" | "run", ... }
+```
+
+answered with `{ "ok": true, ... }` or `{ "ok": false, "message": "..." }`. The verb
+travels in `op` rather than the URL path, which is what lets either backend serve the
+same tools.
+
+`REVIT_MCP_DYNAMO_BACKEND` is `auto` by default — use the HTTP bridge if one is
+configured, otherwise native. Set it to `native` or `http` to pin one and get that
+backend's error directly instead of a summary of both.
 | `say_hello` | Display a greeting dialog in Revit (connection test) |
 
 ## Testing
@@ -220,6 +510,29 @@ public class MyTests : RevitApiTest
     }
 }
 ```
+
+## Building a release
+
+```powershell
+# Per-Revit-version folders and ZIPs in dist\
+powershell -ExecutionPolicy Bypass -File .\tools\Package.ps1
+
+# ...and a single Setup.exe wrapping all of them
+powershell -ExecutionPolicy Bypass -File .\tools\Make-Installer.ps1
+
+# The gate: year declarations agree, every configuration compiles, every
+# payload has the shape Revit needs, the server builds, ISCC accepts the script
+powershell -ExecutionPolicy Bypass -File .\tools\Verify.ps1
+```
+
+`Make-Installer.ps1` needs Inno Setup (`winget install JRSoftware.InnoSetup`);
+`Package.ps1` needs only the .NET SDK. The resulting `Setup.exe` is unsigned, so
+SmartScreen warns until the file earns reputation.
+
+The supported Revit versions are declared in seven places (two `.csproj`, the
+`.sln`, `release.yml`, `Package.ps1`, and the `.iss` twice). Nothing makes them
+agree, so `Verify.ps1` asserts that they do — add a year and it tells you which
+file you forgot.
 
 ## Development
 

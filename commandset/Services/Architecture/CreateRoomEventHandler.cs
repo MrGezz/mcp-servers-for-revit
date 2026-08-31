@@ -1,9 +1,5 @@
-using Autodesk.Revit.DB;
-using Autodesk.Revit.DB.Architecture;
-using Autodesk.Revit.UI;
+﻿using Autodesk.Revit.DB.Architecture;
 using RevitMCPCommandSet.Models.Architecture;
-using RevitMCPCommandSet.Models.Common;
-using RevitMCPCommandSet.Utils;
 using RevitMCPSDK.API.Interfaces;
 
 namespace RevitMCPCommandSet.Services.Architecture
@@ -113,7 +109,7 @@ namespace RevitMCPCommandSet.Services.Architecture
                         if (roomInfo.LevelId > 0)
                         {
                             // Use specified level ID
-                            level = _doc.GetElement(new ElementId(roomInfo.LevelId)) as Level;
+                            level = _doc.GetElement(ElementIdFactory.Create(roomInfo.LevelId)) as Level;
                         }
 
                         if (level == null && roomInfo.Location != null)
@@ -201,7 +197,7 @@ namespace RevitMCPCommandSet.Services.Architecture
                             Parameter upperLimitParam = room.get_Parameter(BuiltInParameter.ROOM_UPPER_LEVEL);
                             if (upperLimitParam != null && !upperLimitParam.IsReadOnly)
                             {
-                                upperLimitParam.Set(new ElementId(roomInfo.UpperLimitId));
+                                upperLimitParam.Set(ElementIdFactory.Create(roomInfo.UpperLimitId));
                             }
                         }
 
@@ -256,8 +252,8 @@ namespace RevitMCPCommandSet.Services.Architecture
                             Number = roomNumber, // Use the actual assigned number (may differ from requested if made unique)
                             RequestedNumber = roomInfo.Number, // Original requested number
                             LevelName = level.Name,
-                            Area = room.Area,
-                            Perimeter = room.Perimeter
+                            AreaMm2 = room.Area * 304.8 * 304.8,       // Revit internal ft2 -> mm2 (1 ft = 304.8 mm)
+                            PerimeterMm = room.Perimeter * 304.8         // Revit internal ft -> mm
                         });
                     }
                 }
@@ -276,7 +272,9 @@ namespace RevitMCPCommandSet.Services.Architecture
                     Success = false,
                     Message = $"Error creating rooms: {ex.Message}",
                 };
-                TaskDialog.Show("Error", $"Error creating rooms: {ex.Message}");
+                // (dialog removed: a modal TaskDialog here blocks the shared ExternalEvent
+                //  queue for every other command. The message already reaches the caller
+                //  through the result set just below/above.)
             }
             finally
             {
@@ -475,7 +473,7 @@ namespace RevitMCPCommandSet.Services.Architecture
         public string Number { get; set; }
         public string RequestedNumber { get; set; } // Original requested number (may differ from Number if made unique)
         public string LevelName { get; set; }
-        public double Area { get; set; }
-        public double Perimeter { get; set; }
+        public double AreaMm2 { get; set; }
+        public double PerimeterMm { get; set; }
     }
 }

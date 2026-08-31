@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
@@ -17,8 +18,11 @@ namespace revit_mcp_plugin.Core
     public class SocketService
     {
         private static SocketService _instance;
-        private TcpListener _listener;
-        private Thread _listenerThread;
+        // One listener per address family. A single IPv4 listener is invisible to a
+        // client that resolves "localhost" to ::1 first — which is what Node 17+ on
+        // Windows does, and what issue #29 is.
+        private readonly List<TcpListener> _listeners = new List<TcpListener>();
+        private readonly List<Thread> _listenerThreads = new List<Thread>();
         private bool _isRunning;
         private int _port = 8080;
         private UIApplication _uiApp;
@@ -50,43 +54,36 @@ namespace revit_mcp_plugin.Core
             set => _port = value;
         }
 
-        // 初始化
         // Initialization.
         public void Initialize(UIApplication uiApp)
         {
             _uiApp = uiApp;
 
-            // 初始化事件管理器
             // Initialize ExternalEventManager
             ExternalEventManager.Instance.Initialize(uiApp, _logger);
 
-            // 记录当前 Revit 版本
             // Get the current Revit version.
             var versionAdapter = new RevitMCPSDK.API.Utils.RevitVersionAdapter(_uiApp.Application);
             string currentVersion = versionAdapter.GetRevitVersion();
-            _logger.Info("当前 Revit 版本: {0}\nCurrent Revit version: {0}", currentVersion);
+            _logger.Info("Current Revit version: {0}", currentVersion);
 
 
 
-            // 创建命令执行器
             // Create CommandExecutor
             _commandExecutor = new CommandExecutor(_commandRegistry, _logger);
 
-            // 加载配置并注册命令
             // Load configuration and register commands.
             ConfigurationManager configManager = new ConfigurationManager(_logger);
             configManager.LoadConfiguration();
             
 
-            //// 从配置中读取服务端口
             //// Read the service port from the configuration.
             //if (configManager.Config.Settings.Port > 0)
             //{
             //    _port = configManager.Config.Settings.Port;
             //}
-            _port = 8080; // 固定端口号 - Hard-wired port number.
+            _port = 8080; // Hard-wired port number.
 
-            // 加载命令
             // Load command.
             CommandManager commandManager = new CommandManager(
                 _commandRegistry, _logger, configManager, _uiApp);
@@ -102,14 +99,17 @@ namespace revit_mcp_plugin.Core
             try
             {
                 _isRunning = true;
-                _listener = new TcpListener(IPAddress.Any, _port);
-                _listener.Start();
+                StartListeners();
 
-                _listenerThread = new Thread(ListenForClients)
+                if (_listeners.Count == 0)
                 {
-                    IsBackground = true
-                };
-                _listenerThread.Start();              
+                    // Every address family failed to bind. Previously this left
+                    // _isRunning true with nothing listening, so the plugin reported
+                    // itself started and every client saw ECONNREFUSED.
+                    _isRunning = false;
+                    _logger.Error("Socket service failed to start: no address could be bound on port {0}", _port);
+                    return;
+                }
             }
             catch (Exception)
             {
@@ -125,13 +125,21 @@ namespace revit_mcp_plugin.Core
             {
                 _isRunning = false;
 
-                _listener?.Stop();
-                _listener = null;
-
-                if(_listenerThread!=null && _listenerThread.IsAlive)
+                foreach (TcpListener listener in _listeners)
                 {
-                    _listenerThread.Join(1000);
+                    try { listener.Stop(); }
+                    catch (Exception) { }
                 }
+                _listeners.Clear();
+
+                foreach (Thread thread in _listenerThreads)
+                {
+                    if (thread != null && thread.IsAlive)
+                    {
+                        thread.Join(1000);
+                    }
+                }
+                _listenerThreads.Clear();
             }
             catch (Exception)
             {
@@ -139,13 +147,81 @@ namespace revit_mcp_plugin.Core
             }
         }
 
-        private void ListenForClients()
+        /// <summary>
+        /// <para>Start one listener per available loopback address family.</para>
+        /// </summary>
+        /// <remarks>
+        /// Two decisions here are deliberate.
+        ///
+        /// BOTH FAMILIES. The MCP server dials 127.0.0.1, but any client that hands
+        /// "localhost" to the resolver is given ::1 first on Node 17+ / Windows. To
+        /// that client a lone IPv4 listener does not exist, and the symptom is
+        /// ECONNREFUSED on every tool call (issue #29). One listener per family takes
+        /// the resolver out of the argument entirely.
+        ///
+        /// LOOPBACK, NOT IPAddress.Any. This socket accepts send_code_to_revit, which
+        /// compiles and runs arbitrary C# inside the user's Revit session with no
+        /// authentication of any kind. Binding the wildcard address offered that to
+        /// every host able to route to this machine. Loopback is the right default;
+        /// REVIT_MCP_BIND_ANY=1 opts back in for anyone who needs remote access and
+        /// understands what it exposes.
+        /// </remarks>
+        private void StartListeners()
         {
+            bool bindAny = string.Equals(
+                Environment.GetEnvironmentVariable("REVIT_MCP_BIND_ANY"), "1", StringComparison.Ordinal);
+
+            List<IPAddress> addresses = new List<IPAddress>();
+            if (bindAny)
+            {
+                _logger.Warning("REVIT_MCP_BIND_ANY=1: listening on ALL network interfaces. send_code_to_revit becomes reachable from the network.");
+                addresses.Add(IPAddress.Any);
+                if (Socket.OSSupportsIPv6) addresses.Add(IPAddress.IPv6Any);
+            }
+            else
+            {
+                addresses.Add(IPAddress.Loopback);
+                if (Socket.OSSupportsIPv6) addresses.Add(IPAddress.IPv6Loopback);
+            }
+
+            foreach (IPAddress address in addresses)
+            {
+                TcpListener listener = null;
+                try
+                {
+                    listener = new TcpListener(address, _port);
+                    listener.Start();
+                    _listeners.Add(listener);
+
+                    Thread thread = new Thread(ListenForClients)
+                    {
+                        IsBackground = true
+                    };
+                    _listenerThreads.Add(thread);
+                    thread.Start(listener);
+
+                    _logger.Info("Listening on {0}:{1}", address, _port);
+                }
+                catch (Exception ex)
+                {
+                    // One family failing is survivable so long as the other bound; both
+                    // failing is reported by the caller. Either way, name which and why.
+                    _logger.Warning("Could not bind {0}:{1}: {2}", address, _port, ex.Message);
+                    try { if (listener != null) listener.Stop(); }
+                    catch (Exception) { }
+                }
+            }
+        }
+
+        private void ListenForClients(object listenerObj)
+        {
+            TcpListener listener = (TcpListener)listenerObj;
+
             try
             {
                 while (_isRunning)
                 {
-                    TcpClient client = _listener.AcceptTcpClient();
+                    TcpClient client = listener.AcceptTcpClient();
 
                     Thread clientThread = new Thread(HandleClientCommunication)
                     {
@@ -173,9 +249,17 @@ namespace revit_mcp_plugin.Core
             {
                 byte[] buffer = new byte[8192];
 
+                // A single 8 KB read used to be treated as one whole JSON-RPC request.
+                // Any request larger than the buffer — send_code_to_revit routinely is —
+                // arrived split across reads, and every fragment failed to parse.
+                // Accumulate instead, and dispatch only once the text forms a complete
+                // JSON value. A Decoder rather than GetString-per-chunk, because a
+                // multi-byte UTF-8 character can straddle a read boundary.
+                Decoder decoder = Encoding.UTF8.GetDecoder();
+                StringBuilder pending = new StringBuilder();
+
                 while (_isRunning && tcpClient.Connected)
                 {
-                    // 读取客户端消息
                     // Read client messages.
                     int bytesRead = 0;
 
@@ -185,24 +269,44 @@ namespace revit_mcp_plugin.Core
                     }
                     catch (IOException)
                     {
-                        // 客户端断开连接
                         // Client disconnected.
                         break;
                     }
 
                     if (bytesRead == 0)
                     {
-                        // 客户端断开连接
                         // Client disconnected.
                         break;
                     }
 
-                    string message = Encoding.UTF8.GetString(buffer, 0, bytesRead);
-                    System.Diagnostics.Trace.WriteLine($"收到消息: {message}\nReceived message: {message}");
+                    char[] chars = new char[decoder.GetCharCount(buffer, 0, bytesRead)];
+                    int charCount = decoder.GetChars(buffer, 0, bytesRead, chars, 0);
+                    pending.Append(chars, 0, charCount);
+
+                    if (pending.Length > MaxRequestChars)
+                    {
+                        // Refuse to grow without bound on a client that never sends a
+                        // parseable request. Loud, not silent.
+                        string oversize = CreateErrorResponse(null, JsonRPCErrorCodes.InvalidRequest,
+                            $"Request exceeded {MaxRequestChars} characters without forming valid JSON");
+                        byte[] oversizeData = Encoding.UTF8.GetBytes(oversize);
+                        stream.Write(oversizeData, 0, oversizeData.Length);
+                        break;
+                    }
+
+                    string message = pending.ToString();
+                    if (!IsCompleteJson(message))
+                    {
+                        // Partial request. Keep reading rather than trying to parse half
+                        // a message and reporting it as malformed.
+                        continue;
+                    }
+                    pending.Clear();
+
+                    System.Diagnostics.Trace.WriteLine($"Received message: {message}");
 
                     string response = ProcessJsonRPCRequest(message);
 
-                    // 发送响应
                     // Send response.
                     byte[] responseData = Encoding.UTF8.GetBytes(response);
                     stream.Write(responseData, 0, responseData.Length);
@@ -218,17 +322,54 @@ namespace revit_mcp_plugin.Core
             }
         }
 
+        // Large enough for any realistic send_code_to_revit payload, small enough that
+        // a client which never completes a request cannot exhaust memory.
+        private const int MaxRequestChars = 16 * 1024 * 1024;
+
+        /// <summary>
+        /// True when <paramref name="text"/> is a complete JSON value — every brace and
+        /// bracket opened outside a string literal has been closed again.
+        /// </summary>
+        /// <remarks>
+        /// This is a FRAMING check, not a validator; ProcessJsonRPCRequest still does the
+        /// real parse and still rejects malformed input. It exists because the wire
+        /// protocol carries no length prefix and no delimiter, so "is a whole message in
+        /// the buffer yet" has to be answered from the bytes themselves.
+        /// </remarks>
+        private static bool IsCompleteJson(string text)
+        {
+            int depth = 0;
+            bool inString = false;
+            bool escaped = false;
+            bool sawStructure = false;
+
+            foreach (char c in text)
+            {
+                if (inString)
+                {
+                    if (escaped) escaped = false;
+                    else if (c == '\\') escaped = true;
+                    else if (c == '"') inString = false;
+                    continue;
+                }
+
+                if (c == '"') { inString = true; continue; }
+                if (c == '{' || c == '[') { depth++; sawStructure = true; continue; }
+                if (c == '}' || c == ']') { depth--; continue; }
+            }
+
+            return sawStructure && depth == 0 && !inString;
+        }
+
         private string ProcessJsonRPCRequest(string requestJson)
         {
             JsonRPCRequest request;
 
             try
             {
-                // 解析JSON-RPC请求
                 // Parse JSON-RPC requests.
                 request = JsonConvert.DeserializeObject<JsonRPCRequest>(requestJson);
 
-                // 验证请求格式是否有效
                 // Verify that the request format is valid.
                 if (request == null || !request.IsValid())
                 {
@@ -239,7 +380,6 @@ namespace revit_mcp_plugin.Core
                     );
                 }
 
-                // 查找命令
                 // Search for the command in the registry.
                 if (!_commandRegistry.TryGetCommand(request.Method, out var command))
                 {
@@ -247,7 +387,6 @@ namespace revit_mcp_plugin.Core
                         $"Method '{request.Method}' not found");
                 }
 
-                // 执行命令
                 // Execute command.
                 try
                 {                
@@ -262,7 +401,6 @@ namespace revit_mcp_plugin.Core
             }
             catch (JsonException)
             {
-                // JSON解析错误
                 // JSON parsing error.
                 return CreateErrorResponse(
                     null,
@@ -272,7 +410,6 @@ namespace revit_mcp_plugin.Core
             }
             catch (Exception ex)
             {
-                // 处理请求时的其他错误
                 // Catch other errors produced when processing requests.
                 return CreateErrorResponse(
                     null,

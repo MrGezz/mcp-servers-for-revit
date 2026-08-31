@@ -1,24 +1,28 @@
-using Autodesk.Revit.UI;
-using RevitMCPCommandSet.Models.Common;
+﻿using RevitMCPCommandSet.Models.Common;
 using RevitMCPSDK.API.Interfaces;
 
 namespace RevitMCPCommandSet.Services
 {
     public class GetAvailableFamilyTypesEventHandler : IExternalEventHandler, IWaitableExternalEventHandler
     {
-        // 执行结果
+        // Execution result
         public List<FamilyTypeInfo> ResultFamilyTypes { get; private set; }
 
-        // 状态同步对象
+        // Status synchronization object
         public bool TaskCompleted { get; private set; }
+        /// <summary>
+        /// Why the read failed, or null when it did not. The command turns this into an
+        /// error; without it a failure was indistinguishable from an empty answer.
+        /// </summary>
+        public string ErrorMessage { get; private set; }
         private readonly ManualResetEvent _resetEvent = new ManualResetEvent(false);
 
-        // 过滤条件
+        // Filter criteria
         public List<string> CategoryList { get; set; }
         public string FamilyNameFilter { get; set; }
         public int? Limit { get; set; }
 
-        // 执行时间，略微比调用超时更短一些
+        // Execution timeout, slightly shorter than the caller's timeout
         public bool WaitForCompletion(int timeoutMilliseconds = 12500)
         {
             _resetEvent.Reset();
@@ -31,18 +35,18 @@ namespace RevitMCPCommandSet.Services
             {
                 var doc = app.ActiveUIDocument.Document;
 
-                // 可载入族
+                // Loadable families
                 var familySymbols = new FilteredElementCollector(doc)
                     .OfClass(typeof(FamilySymbol))
                     .Cast<FamilySymbol>();
-                // 系统族类型（墙、楼板等）
+                // System family types (walls, floors, etc.)
                 var systemTypes = new List<ElementType>();
                 systemTypes.AddRange(new FilteredElementCollector(doc).OfClass(typeof(WallType)).Cast<ElementType>());
                 systemTypes.AddRange(new FilteredElementCollector(doc).OfClass(typeof(FloorType)).Cast<ElementType>());
                 systemTypes.AddRange(new FilteredElementCollector(doc).OfClass(typeof(RoofType)).Cast<ElementType>());
                 systemTypes.AddRange(new FilteredElementCollector(doc).OfClass(typeof(CeilingType)).Cast<ElementType>());
                 systemTypes.AddRange(new FilteredElementCollector(doc).OfClass(typeof(CurtainSystemType)).Cast<ElementType>());
-                // 合并结果
+                // Merge results
                 var allElements = familySymbols
                     .Cast<ElementType>()
                     .Concat(systemTypes)
@@ -50,7 +54,7 @@ namespace RevitMCPCommandSet.Services
 
                 IEnumerable<ElementType> filteredElements = allElements;
 
-                // 类别过滤
+                // Category filter
                 if (CategoryList != null && CategoryList.Any())
                 {
                     var validCategoryIds = new List<int>();
@@ -66,17 +70,13 @@ namespace RevitMCPCommandSet.Services
                     {
                         filteredElements = filteredElements.Where(et =>
                         {
-#if REVIT2024_OR_GREATER
-                            var categoryId = et.Category?.Id.Value;
-#else
-                            var categoryId = et.Category?.Id.IntegerValue;
-#endif
+                            var categoryId = et.Category?.Id.GetValue();
                             return categoryId != null && validCategoryIds.Contains((int)categoryId.Value);
                         });
                     }
                 }
 
-                // 名称模糊匹配（同时匹配族名和类型名）
+                // Fuzzy name match (checks both family name and type name)
                 if (!string.IsNullOrEmpty(FamilyNameFilter))
                 {
                     filteredElements = filteredElements.Where(et =>
@@ -89,13 +89,13 @@ namespace RevitMCPCommandSet.Services
                     });
                 }
 
-                // 限制返回数量
+                // Limit the number of results
                 if (Limit.HasValue && Limit.Value > 0)
                 {
                     filteredElements = filteredElements.Take(Limit.Value);
                 }
 
-                // 转换为FamilyTypeInfo列表
+                // Convert to FamilyTypeInfo list
                 ResultFamilyTypes = filteredElements.Select(et =>
                 {
                     string familyName;
@@ -110,11 +110,7 @@ namespace RevitMCPCommandSet.Services
                     }
                     return new FamilyTypeInfo
                     {
-#if REVIT2024_OR_GREATER
-                        FamilyTypeId = et.Id.Value,
-#else
-                        FamilyTypeId = et.Id.IntegerValue,
-#endif
+                        FamilyTypeId = et.Id.GetValue(),
                         UniqueId = et.UniqueId,
                         FamilyName = familyName,
                         TypeName = et.Name,
@@ -124,7 +120,10 @@ namespace RevitMCPCommandSet.Services
             }
             catch (Exception ex)
             {
-                TaskDialog.Show("Error", "获取族类型失败: " + ex.Message);
+                // ResultFamilyTypes was left null, so the caller received null and read it
+                // as "this project has no family types".
+                ErrorMessage = "Failed to retrieve family types: " + ex.Message;
+                Diagnostics.Report("Error", ErrorMessage);
             }
             finally
             {

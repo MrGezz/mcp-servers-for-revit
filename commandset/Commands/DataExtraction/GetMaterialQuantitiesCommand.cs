@@ -1,4 +1,4 @@
-using Autodesk.Revit.UI;
+﻿using Autodesk.Revit.UI;
 using Newtonsoft.Json.Linq;
 using RevitMCPCommandSet.Services.DataExtraction;
 using RevitMCPSDK.API.Base;
@@ -25,7 +25,11 @@ namespace RevitMCPCommandSet.Commands.DataExtraction
                 bool selectedElementsOnly = parameters?["selectedElementsOnly"]?.Value<bool>() ?? false;
 
                 // Set parameters
-                _handler.SetParameters(categoryFilters, selectedElementsOnly);
+                // The third argument was previously omitted, so element ids were stripped
+                // unconditionally while the success message told callers to pass a flag that
+                // never reached the handler. Wire it up.
+                bool includeElementIds = parameters?["includeElementIds"]?.Value<bool>() ?? false;
+                _handler.SetParameters(categoryFilters, selectedElementsOnly, includeElementIds);
 
                 // Execute and wait
                 if (RaiseAndWaitForCompletion(120000)) // 120 second timeout for large projects

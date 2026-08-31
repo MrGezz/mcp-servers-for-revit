@@ -1,4 +1,4 @@
-﻿using Autodesk.Revit.Attributes;
+﻿﻿using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using System;
@@ -12,7 +12,7 @@ namespace revit_mcp_plugin.Core
         {
             try
             {
-                // 获取socket服务
+                // Obtain the socket service.
                 // Obtain socket service.
                 SocketService service = SocketService.Instance;
 

@@ -1,4 +1,4 @@
-// 
+﻿// 
 //                       RevitAPI-Solutions
 // Copyright (c) Duong Tran Quang (DTDucas) (baymax.contact@gmail.com)
 // 
@@ -21,10 +21,7 @@
 // SOFTWARE.
 //
 
-using Autodesk.Revit.UI;
 using RevitMCPCommandSet.Models.Annotation;
-using RevitMCPCommandSet.Models.Common;
-using RevitMCPCommandSet.Utils;
 using RevitMCPSDK.API.Interfaces;
 
 namespace RevitMCPCommandSet.Services.AnnotationComponents;
@@ -88,7 +85,7 @@ public class CreateDimensionEventHandler : IExternalEventHandler, IWaitableExter
                 View view = null;
                 if (dimInfo.ViewId > 0)
                 {
-                    var element = Doc.GetElement(new ElementId(dimInfo.ViewId));
+                    var element = Doc.GetElement(ElementIdFactory.Create(dimInfo.ViewId));
                     view = element as View;
                 }
 
@@ -138,7 +135,7 @@ public class CreateDimensionEventHandler : IExternalEventHandler, IWaitableExter
                             var references = new ReferenceArray();
                             foreach (var elementId in dimInfo.ElementIds)
                             {
-                                var element = Doc.GetElement(new ElementId(elementId));
+                                var element = Doc.GetElement(ElementIdFactory.Create(elementId));
                                 if (element != null)
                                 {
                                     // Get appropriate reference for this element
@@ -180,7 +177,7 @@ public class CreateDimensionEventHandler : IExternalEventHandler, IWaitableExter
                             // Apply dimension style if specified
                             if (dimInfo.DimensionStyleId > 0)
                             {
-                                var dimensionType = Doc.GetElement(new ElementId(dimInfo.DimensionStyleId)) as DimensionType;
+                                var dimensionType = Doc.GetElement(ElementIdFactory.Create(dimInfo.DimensionStyleId)) as DimensionType;
                                 if (dimensionType != null)
                                 {
                                     dimension.DimensionType = dimensionType;
@@ -220,7 +217,9 @@ public class CreateDimensionEventHandler : IExternalEventHandler, IWaitableExter
                 Message = $"Error creating dimensions: {ex.Message}",
                 Response = new List<int>()
             };
-            TaskDialog.Show("Error", $"Error creating dimensions: {ex.Message}");
+            // (dialog removed: a modal TaskDialog here blocks the shared ExternalEvent
+            //  queue for every other command. The message already reaches the caller
+            //  through the result set just below/above.)
         }
         finally
         {
@@ -464,7 +463,7 @@ public class CreateDimensionEventHandler : IExternalEventHandler, IWaitableExter
         catch (Exception ex)
         {
             // Log error but continue processing
-            TaskDialog.Show("Debug", $"Error finding reference at point: {ex.Message}");
+            Diagnostics.Report("Debug", $"Error finding reference at point: {ex.Message}");
         }
 
         return null;

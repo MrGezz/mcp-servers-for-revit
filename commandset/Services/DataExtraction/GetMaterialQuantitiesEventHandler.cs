@@ -1,5 +1,3 @@
-using Autodesk.Revit.DB;
-using Autodesk.Revit.UI;
 using RevitMCPCommandSet.Models.DataExtraction;
 using RevitMCPSDK.API.Interfaces;
 
@@ -9,15 +7,17 @@ namespace RevitMCPCommandSet.Services.DataExtraction
     {
         private List<string> _categoryFilters;
         private bool _selectedElementsOnly;
+        private bool _includeElementIds;
 
         public GetMaterialQuantitiesResult ResultInfo { get; private set; }
         public bool TaskCompleted { get; private set; }
         private readonly ManualResetEvent _resetEvent = new ManualResetEvent(false);
 
-        public void SetParameters(List<string> categoryFilters = null, bool selectedElementsOnly = false)
+        public void SetParameters(List<string> categoryFilters = null, bool selectedElementsOnly = false, bool includeElementIds = false)
         {
             _categoryFilters = categoryFilters;
             _selectedElementsOnly = selectedElementsOnly;
+            _includeElementIds = includeElementIds;
             TaskCompleted = false;
             _resetEvent.Reset();
         }
@@ -87,11 +87,7 @@ namespace RevitMCPCommandSet.Services.DataExtraction
                         {
                             materialData[matId] = new MaterialQuantityModel
                             {
-#if REVIT2024_OR_GREATER
-                                MaterialId = matId.Value,
-#else
-                                MaterialId = matId.IntegerValue,
-#endif
+                                MaterialId = matId.GetValue(),
                                 MaterialName = material.Name,
                                 MaterialClass = material.MaterialClass
                             };
@@ -104,15 +100,9 @@ namespace RevitMCPCommandSet.Services.DataExtraction
                         materialData[matId].Area += area;
                         materialData[matId].Volume += volume;
 
-#if REVIT2024_OR_GREATER
-                        if (!materialData[matId].ElementIds.Contains(element.Id.Value))
+                        if (!materialData[matId].ElementIds.Contains(element.Id.GetValue()))
                         {
-                            materialData[matId].ElementIds.Add(element.Id.Value);
-#else
-                        if (!materialData[matId].ElementIds.Contains(element.Id.IntegerValue))
-                        {
-                            materialData[matId].ElementIds.Add(element.Id.IntegerValue);
-#endif
+                            materialData[matId].ElementIds.Add(element.Id.GetValue());
                             materialData[matId].ElementCount++;
                         }
                     }
@@ -122,6 +112,18 @@ namespace RevitMCPCommandSet.Services.DataExtraction
                 double totalArea = materials.Sum(m => m.Area);
                 double totalVolume = materials.Sum(m => m.Volume);
 
+                // Strip element ID lists when the caller has not opted in.
+                // ElementCount is preserved so per-material counts remain available.
+                if (!_includeElementIds)
+                {
+                    foreach (var m in materials)
+                        m.ElementIds.Clear();
+                }
+
+                string idNote = _includeElementIds
+                    ? string.Empty
+                    : " Element IDs omitted by default; pass includeElementIds=true to include them.";
+
                 ResultInfo = new GetMaterialQuantitiesResult
                 {
                     TotalMaterials = materials.Count,
@@ -129,7 +131,7 @@ namespace RevitMCPCommandSet.Services.DataExtraction
                     TotalVolume = totalVolume,
                     Materials = materials,
                     Success = true,
-                    Message = $"Successfully calculated quantities for {materials.Count} materials"
+                    Message = $"Successfully calculated quantities for {materials.Count} materials.{idNote}"
                 };
             }
             catch (Exception ex)

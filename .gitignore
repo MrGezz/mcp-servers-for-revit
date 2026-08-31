@@ -367,7 +367,20 @@ FodyWeavers.xsd
 .idea/
 
 # =============================================================================
+# Release artifacts
+# =============================================================================
+# tools/Package.ps1 stages ~285 MB here and tools/Make-Installer.ps1 adds a
+# 68 MB Setup.exe. Build outputs, not sources.
+dist/
+
+# =============================================================================
 # General
 # =============================================================================
 .claude/
 .DS_Store
+
+# Edit-landing backups: <file>.<YYYYMMDD>_<round>_pre.bak, written beside the
+# file before it is modified and removed once the round has been smoke-tested.
+# They are a local safety net, never part of the source.
+*_pre.bak
+/docs

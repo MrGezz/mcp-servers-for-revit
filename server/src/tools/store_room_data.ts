@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { storeRoomsBatch, getProjectByName, getRoomsByProjectId } from "../database/service.js";
+import { memoryOp, projectId, roomId, toProps } from "../memory/legacyBridge.js";
 
 const RoomSchema = z.object({
   room_id: z.string().describe("Unique identifier for the room (Revit Element ID)"),
@@ -12,68 +12,60 @@ const RoomSchema = z.object({
   perimeter: z.number().optional().describe("Room perimeter"),
   occupancy: z.string().optional().describe("Occupancy type"),
   comments: z.string().optional().describe("Additional comments"),
-  metadata: z.record(z.string()).optional().describe("Additional room metadata as key-value pairs")
+  metadata: z.record(z.string()).optional().describe("Additional room metadata as key-value pairs"),
 });
 
 export function registerStoreRoomDataTool(server: McpServer) {
   server.tool(
     "store_room_data",
-    "Store or update room metadata for a specific Revit project in the local database. Rooms are linked to a project by project name. The project must exist before storing room data.",
+    "Store room data in the current Revit model, linked to its project. The data is written INTO the " +
+      "model via Extensible Storage, so it travels with the file. Each room becomes an entity and is " +
+      "linked to the project by a 'contains' relation, which is what makes " +
+      "query_stored_data able to answer 'which rooms belong to this project'.",
     {
       project_name: z.string().describe("The name of the Revit project this room belongs to"),
-      rooms: z.array(RoomSchema).describe("Array of room data to store")
+      rooms: z.array(RoomSchema).describe("Array of room data to store"),
     },
     async (args: any) => {
       try {
-        // Get or create project
-        let project = getProjectByName(args.project_name);
+        const pid = projectId(args.project_name);
 
-        if (!project) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: JSON.stringify({
-                  success: false,
-                  error: `Project "${args.project_name}" not found. Please store project data first using store_project_data tool.`
-                }, null, 2)
-              }
-            ],
-            isError: true
-          };
+        // The project entity is written alongside the rooms. Without it the
+        // 'contains' relations would be dangling, and the graph would reject them -
+        // which is the correct behaviour, so the fix is to supply the endpoint
+        // rather than to relax the check.
+        const entities: any[] = [
+          { id: pid, kind: "project", name: args.project_name, props: {} },
+        ];
+        const relations: any[] = [];
+
+        for (const r of args.rooms ?? []) {
+          const { room_id, room_name, metadata, ...rest } = r;
+          entities.push({
+            id: roomId(room_id),
+            kind: "room",
+            name: room_name ?? room_id,
+            elementId: Number(room_id) || 0,
+            props: { ...toProps(rest), ...toProps(metadata) },
+          });
+          relations.push({ from: pid, to: roomId(room_id), kind: "contains" });
         }
 
-        // Store rooms
-        const count = storeRoomsBatch(project.id, args.rooms);
-        const rooms = getRoomsByProjectId(project.id);
-
+        const response = await memoryOp("write", { entities, relations });
+        return { content: [{ type: "text" as const, text: JSON.stringify(response, null, 2) }] };
+      } catch (error) {
         return {
           content: [
             {
-              type: "text",
-              text: JSON.stringify({
-                success: true,
-                message: `Stored ${count} room(s) successfully`,
-                project_id: project.id,
-                project_name: args.project_name,
-                total_rooms: rooms.length,
-                rooms_stored: count
-              }, null, 2)
-            }
-          ]
-        };
-      } catch (error: any) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify({
-                success: false,
-                error: error.message
-              }, null, 2)
-            }
+              type: "text" as const,
+              text:
+                "store_room_data failed: " +
+                (error instanceof Error ? error.message : String(error)) +
+                "\n\nThis tool now writes into the open Revit model, so it needs a live connection " +
+                "and an open document.",
+            },
           ],
-          isError: true
+          isError: true as const,
         };
       }
     }

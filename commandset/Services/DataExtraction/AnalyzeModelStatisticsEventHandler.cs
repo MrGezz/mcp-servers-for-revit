@@ -13,7 +13,7 @@ namespace RevitMCPCommandSet.Services.DataExtraction
         public bool TaskCompleted { get; private set; }
         private readonly ManualResetEvent _resetEvent = new ManualResetEvent(false);
 
-        public void SetParameters(bool includeDetailedTypes = true)
+        public void SetParameters(bool includeDetailedTypes = false)
         {
             _includeDetailedTypes = includeDetailedTypes;
             TaskCompleted = false;
@@ -58,6 +58,8 @@ namespace RevitMCPCommandSet.Services.DataExtraction
 
                 // Analyze by category
                 var categoryStats = new Dictionary<string, CategoryStatistics>();
+                var categoryTypeNames = new Dictionary<string, HashSet<string>>();
+                var categoryFamilyNames = new Dictionary<string, HashSet<string>>();
                 var familyNames = new HashSet<string>();
 
                 var elements = new FilteredElementCollector(doc)
@@ -76,6 +78,8 @@ namespace RevitMCPCommandSet.Services.DataExtraction
                         {
                             CategoryName = catName
                         };
+                        categoryTypeNames[catName] = new HashSet<string>();
+                        categoryFamilyNames[catName] = new HashSet<string>();
                     }
 
                     categoryStats[catName].ElementCount++;
@@ -89,6 +93,12 @@ namespace RevitMCPCommandSet.Services.DataExtraction
                         if (!string.IsNullOrEmpty(familyName))
                         {
                             familyNames.Add(familyName);
+                            categoryFamilyNames[catName].Add(familyName);
+                        }
+
+                        if (!string.IsNullOrEmpty(typeName))
+                        {
+                            categoryTypeNames[catName].Add(typeName);
                         }
 
                         if (_includeDetailedTypes && !string.IsNullOrEmpty(typeName))
@@ -113,11 +123,11 @@ namespace RevitMCPCommandSet.Services.DataExtraction
                     }
                 }
 
-                // Calculate type and family counts per category
-                foreach (var stat in categoryStats.Values)
+                // Set type and family counts from tracked sets (accurate regardless of includeDetailedTypes)
+                foreach (var kvp in categoryStats)
                 {
-                    stat.TypeCount = stat.Types.Select(t => t.TypeName).Distinct().Count();
-                    stat.FamilyCount = stat.Types.Select(t => t.FamilyName).Distinct().Count();
+                    kvp.Value.TypeCount = categoryTypeNames[kvp.Key].Count;
+                    kvp.Value.FamilyCount = categoryFamilyNames[kvp.Key].Count;
                 }
 
                 // Analyze by level
@@ -153,7 +163,9 @@ namespace RevitMCPCommandSet.Services.DataExtraction
                     Categories = categoryStats.Values.OrderByDescending(c => c.ElementCount).ToList(),
                     Levels = levelStats,
                     Success = true,
-                    Message = $"Successfully analyzed model with {totalElements} elements across {categoryStats.Count} categories"
+                    Message = _includeDetailedTypes
+                        ? $"Successfully analyzed model with {totalElements} elements across {categoryStats.Count} categories"
+                        : $"Successfully analyzed model with {totalElements} elements across {categoryStats.Count} categories. Per-type breakdown omitted; pass includeDetailedTypes=true to include it."
                 };
             }
             catch (Exception ex)

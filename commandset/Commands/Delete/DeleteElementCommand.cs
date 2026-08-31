@@ -23,36 +23,44 @@ namespace RevitMCPCommandSet.Commands.Delete
             {
                 try
                 {
-                    // 解析数组参数
+                    // Parse array parameters
                     var elementIds = parameters?["elementIds"]?.ToObject<string[]>();
                     if (elementIds == null || elementIds.Length == 0)
                     {
-                        throw new ArgumentException("元素ID列表不能为空");
+                        throw new ArgumentException("Element ID list must not be empty");
                     }
 
-                    // 设置要删除的元素ID数组
+                    // Set the array of element IDs to delete
                     _handler.ElementIds = elementIds;
 
-                    // 触发外部事件并等待完成
+                    // Raise the external event and wait for completion
                     if (RaiseAndWaitForCompletion(15000))
                     {
+                        // Partial success is reported as such: the ids that could not be
+                        // resolved travel back with the result rather than being shown in a
+                        // dialog inside Revit, which the caller cannot see and which blocks
+                        // every other command until somebody dismisses it.
                         if (_handler.IsSuccess)
                         {
-                            return new { deleted = true, count = _handler.DeletedCount };
+                            return new
+                            {
+                                deleted = true,
+                                count = _handler.DeletedCount,
+                                unparseableIds = _handler.UnparseableIds,
+                                missingIds = _handler.MissingIds
+                            };
                         }
-                        else
-                        {
-                            throw new Exception("删除元素失败");
-                        }
+
+                        throw new Exception(_handler.ErrorMessage ?? "Failed to delete elements");
                     }
                     else
                     {
-                        throw new TimeoutException("删除元素操作超时");
+                        throw new TimeoutException("Delete element operation timed out");
                     }
                 }
                 catch (Exception ex)
                 {
-                    throw new Exception($"删除元素失败: {ex.Message}");
+                    throw new Exception($"Failed to delete elements: {ex.Message}");
                 }
             }
         }

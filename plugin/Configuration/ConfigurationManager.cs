@@ -2,6 +2,7 @@
 using RevitMCPSDK.API.Interfaces;
 using revit_mcp_plugin.Utils;
 using System;
+using System.Collections.Generic;
 using System.IO;
 
 namespace revit_mcp_plugin.Configuration
@@ -17,14 +18,12 @@ namespace revit_mcp_plugin.Configuration
         {
             _logger = logger;
 
-            // 配置文件路径
             // Configuration file path.
             _configPath = PathManager.GetCommandRegistryFilePath();
         }
 
         /// <summary>
-        /// <para>加载配置</para>
-        /// <para>Load configuration from a JSON file.</para>
+        /// Load configuration from a JSON file.
         /// </summary>
         public void LoadConfiguration()
         {
@@ -32,33 +31,62 @@ namespace revit_mcp_plugin.Configuration
             {
                 if (File.Exists(_configPath))
                 {
+                    // Pick up commands added by an upgrade BEFORE reading, or every one of
+                    // them answers "Method not found" while the bridge looks healthy.
+                    List<string> newlyRegistered;
+                    int addedCount = PathManager.ReconcileCommandRegistry(out newlyRegistered);
+                    if (addedCount > 0)
+                    {
+                        _logger.Info(
+                            "Registered {0} newly deployed command(s): {1}",
+                            addedCount,
+                            string.Join(", ", newlyRegistered));
+                    }
+
                     string json = File.ReadAllText(_configPath);
                     Config = JsonConvert.DeserializeObject<FrameworkConfig>(json);
-                    _logger.Info("已加载配置文件: {0}\nConfiguration file loaded: {0}", _configPath);
+
+                    // "Loaded" and "loaded something usable" are different claims. A registry
+                    // holding zero commands parses perfectly and leaves every tool call
+                    // answering "Method not found" while the log says the file loaded fine.
+                    // That state cost two people days of diagnosis, so it gets its own line.
+                    int commandCount = Config?.Commands?.Count ?? 0;
+                    if (commandCount == 0)
+                    {
+                        _logger.Error(
+                            "Configuration file loaded from {0} but it contains NO commands. " +
+                            "The server will accept connections and reject every command. " +
+                            "Open Settings and save the command set, then toggle the Revit MCP " +
+                            "Switch off and on so the commands bind.",
+                            _configPath);
+                    }
+                    else
+                    {
+                        _logger.Info("Configuration file loaded: {0} ({1} command(s))", _configPath, commandCount);
+                    }
                 }
                 else
                 {
-                    _logger.Error("未找到配置文件\nNo configuration file found.");
+                    _logger.Error("No configuration file found at {0}.", _configPath);
                 }
             }
             catch (Exception ex)
             {
-                _logger.Error("加载配置文件失败: {0}\nFailed to load configuration file: {0}", ex.Message);
+                _logger.Error("Failed to load configuration file: {0}", ex.Message);
             }
 
-            // 记录加载时间
             // Register load time.
             _lastConfigLoadTime = DateTime.Now;
         }
 
         ///// <summary>
-        ///// <para>重新加载配置</para>
+        ///// <para>Reload configuration.</para>
         ///  <para>Reload configuration.</para>
         ///// </summary>
         //public void RefreshConfiguration()
         //{
         //    LoadConfiguration();
-        //    _logger.Info("配置已重新加载\nConfiguration has been reloaded.");
+        //    _logger.Info("Configuration has been reloaded.");
         //}
 
         //public bool HasConfigChanged()
