@@ -1,16 +1,16 @@
 ﻿using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using Newtonsoft.Json.Linq;
+using RevitMCPCommandSet.Utils;
 using RevitMCPCommandSet.Models.Common;
 using RevitMCPSDK.API.Interfaces;
 
 namespace RevitMCPCommandSet.Services.Modify
 {
-    public class SetElementCurveEventHandler : IExternalEventHandler, IWaitableExternalEventHandler
+    public class SetElementCurveEventHandler : WaitableEventHandlerBase, IExternalEventHandler, IWaitableExternalEventHandler
     {
         private UIApplication uiApp;
         private Document Doc => uiApp.ActiveUIDocument.Document;
-        private readonly ManualResetEvent _resetEvent = new(false);
         public int ElementId { get; private set; }
         public JObject StartPoint { get; private set; }
         public JObject EndPoint { get; private set; }
@@ -71,7 +71,6 @@ namespace RevitMCPCommandSet.Services.Modify
 
         public bool WaitForCompletion(int timeout = 10000)
         {
-            _resetEvent.Reset();
             return _resetEvent.WaitOne(timeout);
         }
 

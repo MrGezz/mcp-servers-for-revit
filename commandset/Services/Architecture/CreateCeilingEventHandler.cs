@@ -1,15 +1,15 @@
-﻿using RevitMCPCommandSet.Models.Architecture;
+﻿using RevitMCPCommandSet.Utils;
+using RevitMCPCommandSet.Models.Architecture;
 using RevitMCPSDK.API.Interfaces;
 
 namespace RevitMCPCommandSet.Services.Architecture
 {
-    public class CreateCeilingEventHandler : IExternalEventHandler, IWaitableExternalEventHandler
+    public class CreateCeilingEventHandler : WaitableEventHandlerBase, IExternalEventHandler, IWaitableExternalEventHandler
     {
         private UIApplication _uiApp;
         private UIDocument _uiDoc => _uiApp.ActiveUIDocument;
         private Document _doc => _uiDoc.Document;
 
-        private readonly ManualResetEvent _resetEvent = new ManualResetEvent(false);
 
         public List<CeilingCreationInfo> CeilingData { get; private set; }
 
@@ -45,10 +45,13 @@ namespace RevitMCPCommandSet.Services.Architecture
 
                     if (ceilingType == null && !string.IsNullOrEmpty(info.CeilingType))
                     {
-                        ceilingType = new FilteredElementCollector(_doc)
-                            .OfClass(typeof(CeilingType))
-                            .Cast<CeilingType>()
-                            .FirstOrDefault(ct => ct.Name.Equals(info.CeilingType, StringComparison.OrdinalIgnoreCase));
+                        using (var fec = new FilteredElementCollector(_doc))
+                        {
+                            ceilingType = fec
+                                .OfClass(typeof(CeilingType))
+                                .Cast<CeilingType>()
+                                .FirstOrDefault(ct => ct.Name.Equals(info.CeilingType, StringComparison.OrdinalIgnoreCase));
+                        }
                         if (ceilingType == null)
                         {
                             _warnings.Add($"Ceiling type '{info.CeilingType}' not found, using first available");
@@ -57,10 +60,13 @@ namespace RevitMCPCommandSet.Services.Architecture
 
                     if (ceilingType == null)
                     {
-                        ceilingType = new FilteredElementCollector(_doc)
-                            .OfClass(typeof(CeilingType))
-                            .Cast<CeilingType>()
-                            .FirstOrDefault();
+                        using (var fec = new FilteredElementCollector(_doc))
+                        {
+                            ceilingType = fec
+                                .OfClass(typeof(CeilingType))
+                                .Cast<CeilingType>()
+                                .FirstOrDefault();
+                        }
                     }
 
                     if (ceilingType == null) continue;
@@ -133,10 +139,14 @@ namespace RevitMCPCommandSet.Services.Architecture
 
         private Level FindNearestLevel(double elevationInFeet)
         {
-            var levels = new FilteredElementCollector(_doc)
-                .OfClass(typeof(Level))
-                .Cast<Level>()
-                .ToList();
+            List<Level> levels;
+            using (var fec = new FilteredElementCollector(_doc))
+            {
+                levels = fec
+                    .OfClass(typeof(Level))
+                    .Cast<Level>()
+                    .ToList();
+            }
 
             Level nearestLevel = null;
             double minDistance = double.MaxValue;
@@ -156,7 +166,6 @@ namespace RevitMCPCommandSet.Services.Architecture
 
         public bool WaitForCompletion(int timeoutMilliseconds = 10000)
         {
-            _resetEvent.Reset();
             return _resetEvent.WaitOne(timeoutMilliseconds);
         }
 

@@ -1,17 +1,17 @@
 ﻿using Autodesk.Revit.DB.Mechanical;
+using RevitMCPCommandSet.Utils;
 using RevitMCPCommandSet.Models.MEP;
 using RevitMCPSDK.API.Interfaces;
 
 namespace RevitMCPCommandSet.Services.MEP
 {
-  public class CreateDuctEventHandler : IExternalEventHandler, IWaitableExternalEventHandler
+  public class CreateDuctEventHandler : WaitableEventHandlerBase, IExternalEventHandler, IWaitableExternalEventHandler
   {
     private UIApplication uiApp;
     private UIDocument uiDoc => uiApp.ActiveUIDocument;
     private Document doc => uiDoc.Document;
     private Autodesk.Revit.ApplicationServices.Application app => uiApp.Application;
 
-    private readonly ManualResetEvent _resetEvent = new ManualResetEvent(false);
 
     public List<DuctCreationInfo> CreatedInfo { get; private set; }
 
@@ -58,10 +58,13 @@ namespace RevitMCPCommandSet.Services.MEP
 
           if (ductType == null)
           {
-            ductType = new FilteredElementCollector(doc)
-                .OfClass(typeof(DuctType))
-                .Cast<DuctType>()
-                .FirstOrDefault(d => d.Shape == ConnectorProfileType.Rectangular);
+            using (var fec = new FilteredElementCollector(doc))
+            {
+              ductType = fec
+                  .OfClass(typeof(DuctType))
+                  .Cast<DuctType>()
+                  .FirstOrDefault(d => d.Shape == ConnectorProfileType.Rectangular);
+            }
 
             if (ductType == null)
             {
@@ -78,10 +81,14 @@ namespace RevitMCPCommandSet.Services.MEP
           {
             transaction.Start();
 
-            MEPSystemType mepSystemType = new FilteredElementCollector(doc)
-                .OfClass(typeof(MEPSystemType))
-                .Cast<MEPSystemType>()
-                .FirstOrDefault(m => m.SystemClassification == MEPSystemClassification.SupplyAir);
+            MEPSystemType mepSystemType;
+            using (var fec = new FilteredElementCollector(doc))
+            {
+              mepSystemType = fec
+                  .OfClass(typeof(MEPSystemType))
+                  .Cast<MEPSystemType>()
+                  .FirstOrDefault(m => m.SystemClassification == MEPSystemClassification.SupplyAir);
+            }
 
             if (mepSystemType != null)
             {
@@ -142,7 +149,6 @@ namespace RevitMCPCommandSet.Services.MEP
 
     public bool WaitForCompletion(int timeoutMilliseconds = 15000)
     {
-      _resetEvent.Reset();
       return _resetEvent.WaitOne(timeoutMilliseconds);
     }
 

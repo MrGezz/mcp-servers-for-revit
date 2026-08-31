@@ -1,9 +1,10 @@
-﻿using RevitMCPCommandSet.Models.Common;
+﻿using RevitMCPCommandSet.Utils;
+using RevitMCPCommandSet.Models.Common;
 using RevitMCPSDK.API.Interfaces;
 
 namespace RevitMCPCommandSet.Services
 {
-    public class GetCurrentViewElementsEventHandler : IExternalEventHandler, IWaitableExternalEventHandler
+    public class GetCurrentViewElementsEventHandler : WaitableEventHandlerBase, IExternalEventHandler, IWaitableExternalEventHandler
     {
         // Default model category list
         private readonly List<string> _defaultModelCategories = new List<string>
@@ -48,7 +49,6 @@ namespace RevitMCPCommandSet.Services
 
         // State synchronisation object
         public bool TaskCompleted { get; private set; }
-        private readonly ManualResetEvent _resetEvent = new ManualResetEvent(false);
 
         // Set query parameters; throws ArgumentException immediately if any category name is
         // not a recognised BuiltInCategory member, so the MCP caller receives an explicit
@@ -79,7 +79,6 @@ namespace RevitMCPCommandSet.Services
         // Implements IWaitableExternalEventHandler
         public bool WaitForCompletion(int timeoutMilliseconds = 10000)
         {
-            _resetEvent.Reset();
             return _resetEvent.WaitOne(timeoutMilliseconds);
         }
 
@@ -106,7 +105,7 @@ namespace RevitMCPCommandSet.Services
                 }
 
                 // Get all elements in the current view
-                var collector = new FilteredElementCollector(doc, activeView.Id)
+                using var collector = new FilteredElementCollector(doc, activeView.Id)
                     .WhereElementIsNotElementType();
 
                 // Get all elements
@@ -129,10 +128,13 @@ namespace RevitMCPCommandSet.Services
                     if (builtInCategories.Count > 0)
                     {
                         ElementMulticategoryFilter categoryFilter = new ElementMulticategoryFilter(builtInCategories);
-                        elements = new FilteredElementCollector(doc, activeView.Id)
-                            .WhereElementIsNotElementType()
-                            .WherePasses(categoryFilter)
-                            .ToElements();
+                        using (var catCollector = new FilteredElementCollector(doc, activeView.Id))
+                        {
+                            elements = catCollector
+                                .WhereElementIsNotElementType()
+                                .WherePasses(categoryFilter)
+                                .ToElements();
+                        }
                     }
                 }
 
@@ -168,7 +170,7 @@ namespace RevitMCPCommandSet.Services
                 {
                     ViewId = activeView.Id.GetValue(),
                     ViewName = activeView.Name,
-                    TotalElementsInView = new FilteredElementCollector(doc, activeView.Id).GetElementCount(),
+                    TotalElementsInView = GetTotalElementCount(doc, activeView.Id),
                     FilteredElementCount = elementInfos.Count,
                     Elements = elementInfos,
                     Warning = warning
@@ -193,6 +195,12 @@ namespace RevitMCPCommandSet.Services
                 TaskCompleted = true;
                 _resetEvent.Set();
             }
+        }
+
+        private static int GetTotalElementCount(Document doc, ElementId viewId)
+        {
+            using var counter = new FilteredElementCollector(doc, viewId);
+            return counter.GetElementCount();
         }
 
         private Dictionary<string, string> GetElementProperties(Element element)

@@ -97,7 +97,10 @@ namespace revit_mcp_plugin.Core
                     SocketService.Instance.Stop();
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("MCP plugin OnShutdown error: " + ex.Message);
+            }
 
             return Result.Succeeded;
         }

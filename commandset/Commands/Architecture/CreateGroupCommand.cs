@@ -8,6 +8,14 @@ namespace RevitMCPCommandSet.Commands.Architecture
 {
     public class CreateGroupCommand : ExternalEventCommandBase
     {
+        // Instance-level, not static: ExternalEvent.Raise() already serialises
+        // EXECUTION on the Revit UI thread, so a static lock would serialise
+        // unrelated commands against each other for no benefit. What is
+        // unprotected is this command's SHARED HANDLER INSTANCE - the registry
+        // keeps one per command name - between SetParameters() and the handler
+        // reading those parameters on the UI thread.
+        private readonly object _executionLock = new object();
+
         private CreateGroupEventHandler _handler => (CreateGroupEventHandler)Handler;
 
         public override string CommandName => "create_group";
@@ -19,27 +27,30 @@ namespace RevitMCPCommandSet.Commands.Architecture
 
         public override object Execute(JObject parameters, string requestId)
         {
-            try
+            lock (_executionLock)
             {
-                List<GroupCreationInfo> data = parameters["data"].ToObject<List<GroupCreationInfo>>();
-                if (data == null)
-                    throw new ArgumentNullException(nameof(data), "No group data provided");
-
-                _handler.SetParameters(data);
-
-                if (RaiseAndWaitForCompletion(30000))
+                try
                 {
-                    return _handler.Result;
+                    List<GroupCreationInfo> data = parameters["data"].ToObject<List<GroupCreationInfo>>();
+                    if (data == null)
+                        throw new ArgumentNullException(nameof(data), "No group data provided");
+
+                    _handler.SetParameters(data);
+
+                    if (RaiseAndWaitForCompletion(30000))
+                    {
+                        return _handler.Result;
+                    }
+                    else
+                    {
+                        throw new TimeoutException("Create group operation timed out");
+                    }
                 }
-                else
+                catch (Exception ex)
                 {
-                    throw new TimeoutException("Create group operation timed out");
+                    throw new Exception($"Failed to create group: {ex.Message}");
                 }
-            }
-            catch (Exception ex)
-            {
-                throw new Exception($"Failed to create group: {ex.Message}");
-            }
+                    }
         }
     }
 }

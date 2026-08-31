@@ -1,9 +1,10 @@
-﻿using RevitMCPCommandSet.Models.Common;
+﻿using RevitMCPCommandSet.Utils;
+using RevitMCPCommandSet.Models.Common;
 using RevitMCPSDK.API.Interfaces;
 
 namespace RevitMCPCommandSet.Services
 {
-    public class CreateSurfaceElementEventHandler : IExternalEventHandler, IWaitableExternalEventHandler
+    public class CreateSurfaceElementEventHandler : WaitableEventHandlerBase, IExternalEventHandler, IWaitableExternalEventHandler
     {
         private UIApplication uiApp;
         private UIDocument uiDoc => uiApp.ActiveUIDocument;
@@ -12,7 +13,6 @@ namespace RevitMCPCommandSet.Services
         /// <summary>
         /// Event wait object.
         /// </summary>
-        private readonly ManualResetEvent _resetEvent = new ManualResetEvent(false);
         /// <summary>
         /// Creation data (input data).
         /// </summary>
@@ -104,11 +104,14 @@ namespace RevitMCPCommandSet.Services
                             if (floorType == null)
                             {
                                 // Requested typeId was invalid or not provided, fall back to first available
-                                floorType = new FilteredElementCollector(doc)
-                                    .OfClass(typeof(FloorType))
-                                    .OfCategory(BuiltInCategory.OST_Floors)
-                                    .Cast<FloorType>()
-                                    .FirstOrDefault();
+                                using (var floorCollector = new FilteredElementCollector(doc))
+                                {
+                                    floorType = floorCollector
+                                        .OfClass(typeof(FloorType))
+                                        .OfCategory(BuiltInCategory.OST_Floors)
+                                        .Cast<FloorType>()
+                                        .FirstOrDefault();
+                                }
                                 if (floorType == null)
                                 {
                                     _warnings.Add($"No floor types available in project.");
@@ -124,11 +127,14 @@ namespace RevitMCPCommandSet.Services
                             if (roofType == null)
                             {
                                 // Get default roof type if not specified
-                                roofType = new FilteredElementCollector(doc)
-                                    .OfClass(typeof(RoofType))
-                                    .OfCategory(BuiltInCategory.OST_Roofs)
-                                    .Cast<RoofType>()
-                                    .FirstOrDefault();
+                                using (var roofCollector = new FilteredElementCollector(doc))
+                                {
+                                    roofType = roofCollector
+                                        .OfClass(typeof(RoofType))
+                                        .OfCategory(BuiltInCategory.OST_Roofs)
+                                        .Cast<RoofType>()
+                                        .FirstOrDefault();
+                                }
                                 if (roofType == null)
                                 {
                                     _warnings.Add($"No roof types available in project.");
@@ -144,11 +150,14 @@ namespace RevitMCPCommandSet.Services
                             if (ceilingType == null)
                             {
                                 // Get default ceiling type if not specified
-                                ceilingType = new FilteredElementCollector(doc)
-                                    .OfClass(typeof(CeilingType))
-                                    .OfCategory(BuiltInCategory.OST_Ceilings)
-                                    .Cast<CeilingType>()
-                                    .FirstOrDefault();
+                                using (var ceilingCollector = new FilteredElementCollector(doc))
+                                {
+                                    ceilingType = ceilingCollector
+                                        .OfClass(typeof(CeilingType))
+                                        .OfCategory(BuiltInCategory.OST_Ceilings)
+                                        .Cast<CeilingType>()
+                                        .FirstOrDefault();
+                                }
                                 if (ceilingType == null)
                                 {
                                     _warnings.Add($"No ceiling types available in project.");
@@ -163,18 +172,24 @@ namespace RevitMCPCommandSet.Services
                         default:
                             if (symbol == null)
                             {
-                                symbol = new FilteredElementCollector(doc)
-                                    .OfClass(typeof(FamilySymbol))
-                                    .OfCategory(builtInCategory)
-                                    .Cast<FamilySymbol>()
-                                    .FirstOrDefault(fs => fs.IsActive); // Use the first active type as the default
+                                using (var symCollector = new FilteredElementCollector(doc))
+                                {
+                                    symbol = symCollector
+                                        .OfClass(typeof(FamilySymbol))
+                                        .OfCategory(builtInCategory)
+                                        .Cast<FamilySymbol>()
+                                        .FirstOrDefault(fs => fs.IsActive); // Use the first active type as the default
+                                }
                                 if (symbol == null)
                                 {
-                                    symbol = new FilteredElementCollector(doc)
-                                    .OfClass(typeof(FamilySymbol))
-                                    .OfCategory(builtInCategory)
-                                    .Cast<FamilySymbol>()
-                                    .FirstOrDefault();
+                                    using (var symCollector2 = new FilteredElementCollector(doc))
+                                    {
+                                        symbol = symCollector2
+                                            .OfClass(typeof(FamilySymbol))
+                                            .OfCategory(builtInCategory)
+                                            .Cast<FamilySymbol>()
+                                            .FirstOrDefault();
+                                    }
                                 }
                             }
                             if (symbol == null)
@@ -301,7 +316,6 @@ namespace RevitMCPCommandSet.Services
         /// <returns>Whether the operation completed before the timeout expired</returns>
         public bool WaitForCompletion(int timeoutMilliseconds = 10000)
         {
-            _resetEvent.Reset();
             return _resetEvent.WaitOne(timeoutMilliseconds);
         }
 
@@ -322,26 +336,37 @@ namespace RevitMCPCommandSet.Services
         {
 
             // Find a floor type matching the target thickness
-            FloorType existingType = new FilteredElementCollector(doc)
+            FloorType existingType;
+            using (var existCollector = new FilteredElementCollector(doc))
+            {
+                existingType = existCollector
                                      .OfClass(typeof(FloorType))                    // Filter to FloorType class only
                                      .OfCategory(BuiltInCategory.OST_Floors)        // Filter to Floors category only
                                      .Cast<FloorType>()                            // Cast to FloorType
                                      .FirstOrDefault(w => w.Name == $"{_floorName}{thickness * 304.8}mm");
+            }
             if (existingType != null)
                 return existingType;
             // No matching floor type found — create one
-            FloorType baseFloorType = existingType = new FilteredElementCollector(doc)
+            FloorType baseFloorType;
+            using (var genericCollector = new FilteredElementCollector(doc))
+            {
+                baseFloorType = existingType = genericCollector
                                      .OfClass(typeof(FloorType))                    // Filter to FloorType class only
                                      .OfCategory(BuiltInCategory.OST_Floors)        // Filter to Floors category only
                                      .Cast<FloorType>()                            // Cast to FloorType
                                      .FirstOrDefault(w => RevitUiTerms.Contains(RevitUiTerms.GenericTypePrefix, w.Name));
+            }
             if (existingType != null)
             {
-                baseFloorType = existingType = new FilteredElementCollector(doc)
-                                     .OfClass(typeof(FloorType))                    // Filter to FloorType class only
-                                     .OfCategory(BuiltInCategory.OST_Floors)        // Filter to Floors category only
-                                     .Cast<FloorType>()                            // Cast to FloorType
-                                     .FirstOrDefault();
+                using (var fallbackCollector = new FilteredElementCollector(doc))
+                {
+                    baseFloorType = existingType = fallbackCollector
+                                         .OfClass(typeof(FloorType))                    // Filter to FloorType class only
+                                         .OfCategory(BuiltInCategory.OST_Floors)        // Filter to Floors category only
+                                         .Cast<FloorType>()                            // Cast to FloorType
+                                         .FirstOrDefault();
+                }
             }
 
             // Duplicate the floor type

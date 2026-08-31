@@ -1,12 +1,12 @@
-﻿using RevitMCPSDK.API.Interfaces;
+﻿using RevitMCPCommandSet.Utils;
+using RevitMCPSDK.API.Interfaces;
 
 namespace RevitMCPCommandSet.Services.Modify
 {
-    public class TransformElementsEventHandler : IExternalEventHandler, IWaitableExternalEventHandler
+    public class TransformElementsEventHandler : WaitableEventHandlerBase, IExternalEventHandler, IWaitableExternalEventHandler
     {
         private UIApplication uiApp;
         private Document Doc => uiApp.ActiveUIDocument.Document;
-        private readonly ManualResetEvent _resetEvent = new(false);
         public int[] ElementIds { get; private set; }
         public string TransformType { get; private set; }
         public JObject TransformParams { get; private set; }
@@ -103,7 +103,6 @@ namespace RevitMCPCommandSet.Services.Modify
 
         public bool WaitForCompletion(int timeout = 10000)
         {
-            _resetEvent.Reset();
             return _resetEvent.WaitOne(timeout);
         }
 

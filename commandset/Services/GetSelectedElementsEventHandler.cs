@@ -1,9 +1,10 @@
-﻿using RevitMCPCommandSet.Models.Common;
+﻿using RevitMCPCommandSet.Utils;
+using RevitMCPCommandSet.Models.Common;
 using RevitMCPSDK.API.Interfaces;
 
 namespace RevitMCPCommandSet.Services
 {
-    public class GetSelectedElementsEventHandler : IExternalEventHandler, IWaitableExternalEventHandler
+    public class GetSelectedElementsEventHandler : WaitableEventHandlerBase, IExternalEventHandler, IWaitableExternalEventHandler
     {
         // Execution result
         public List<Models.Common.ElementInfo> ResultElements { get; private set; }
@@ -15,7 +16,6 @@ namespace RevitMCPCommandSet.Services
         /// error; without it a failure was indistinguishable from an empty answer.
         /// </summary>
         public string ErrorMessage { get; private set; }
-        private readonly ManualResetEvent _resetEvent = new ManualResetEvent(false);
 
         // Limit on the number of elements returned
         public int? Limit { get; set; }
@@ -23,7 +23,6 @@ namespace RevitMCPCommandSet.Services
         // IWaitableExternalEventHandler implementation
         public bool WaitForCompletion(int timeoutMilliseconds = 10000)
         {
-            _resetEvent.Reset();
             return _resetEvent.WaitOne(timeoutMilliseconds);
         }
 

@@ -1,16 +1,16 @@
-﻿using RevitMCPCommandSet.Models.Annotation;
+﻿using RevitMCPCommandSet.Utils;
+using RevitMCPCommandSet.Models.Annotation;
 using RevitMCPSDK.API.Interfaces;
 
 namespace RevitMCPCommandSet.Services.Annotation
 {
-    public class CreateTextNoteEventHandler : IExternalEventHandler, IWaitableExternalEventHandler
+    public class CreateTextNoteEventHandler : WaitableEventHandlerBase, IExternalEventHandler, IWaitableExternalEventHandler
     {
         private UIApplication uiApp;
         private UIDocument uiDoc => uiApp.ActiveUIDocument;
         private Document doc => uiDoc.Document;
         private Autodesk.Revit.ApplicationServices.Application app => uiApp.Application;
 
-        private readonly ManualResetEvent _resetEvent = new ManualResetEvent(false);
 
         public List<TextNoteCreationInfo> CreatedInfo { get; private set; }
 
@@ -60,10 +60,13 @@ namespace RevitMCPCommandSet.Services.Annotation
 
                     if (textNoteType == null)
                     {
-                        textNoteType = new FilteredElementCollector(doc)
-                            .OfClass(typeof(TextNoteType))
-                            .Cast<TextNoteType>()
-                            .FirstOrDefault();
+                        using (var typeCollector = new FilteredElementCollector(doc))
+                        {
+                            textNoteType = typeCollector
+                                .OfClass(typeof(TextNoteType))
+                                .Cast<TextNoteType>()
+                                .FirstOrDefault();
+                        }
 
                         if (data.TextNoteTypeId != -1 && data.TextNoteTypeId != 0)
                         {
@@ -144,7 +147,6 @@ namespace RevitMCPCommandSet.Services.Annotation
 
         public bool WaitForCompletion(int timeoutMilliseconds = 15000)
         {
-            _resetEvent.Reset();
             return _resetEvent.WaitOne(timeoutMilliseconds);
         }
 

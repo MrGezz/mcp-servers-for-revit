@@ -1,3 +1,4 @@
+using RevitMCPCommandSet.Utils;
 using RevitMCPSDK.API.Interfaces;
 using LevelCreationInfo = RevitMCPCommandSet.Models.Architecture.LevelInfo;
 
@@ -6,7 +7,7 @@ namespace RevitMCPCommandSet.Services.Architecture
     /// <summary>
     /// Event handler for creating levels in Revit
     /// </summary>
-    public class CreateLevelEventHandler : IExternalEventHandler, IWaitableExternalEventHandler
+    public class CreateLevelEventHandler : WaitableEventHandlerBase, IExternalEventHandler, IWaitableExternalEventHandler
     {
         private UIApplication _uiApp;
         private UIDocument _uiDoc => _uiApp.ActiveUIDocument;
@@ -15,7 +16,6 @@ namespace RevitMCPCommandSet.Services.Architecture
         /// <summary>
         /// Event wait object for synchronization
         /// </summary>
-        private readonly ManualResetEvent _resetEvent = new ManualResetEvent(false);
 
         /// <summary>
         /// Level creation data (input)
@@ -46,10 +46,14 @@ namespace RevitMCPCommandSet.Services.Architecture
                 var warnings = new List<string>();
 
                 // Get all existing level names to check for duplicates
-                var existingLevels = new FilteredElementCollector(_doc)
-                    .OfClass(typeof(Level))
-                    .Cast<Level>()
-                    .ToList();
+                List<Level> existingLevels;
+                using (var fec = new FilteredElementCollector(_doc))
+                {
+                    existingLevels = fec
+                        .OfClass(typeof(Level))
+                        .Cast<Level>()
+                        .ToList();
+                }
 
                 HashSet<string> existingLevelNames = new HashSet<string>(
                     existingLevels.Select(l => l.Name),
@@ -113,10 +117,14 @@ namespace RevitMCPCommandSet.Services.Architecture
                                 string floorPlanViewName = null;
                                 if (levelInfo.CreateFloorPlan)
                                 {
-                                    var floorPlanType = new FilteredElementCollector(_doc)
-                                        .OfClass(typeof(ViewFamilyType))
-                                        .Cast<ViewFamilyType>()
-                                        .FirstOrDefault(vft => vft.ViewFamily == ViewFamily.FloorPlan);
+                                    ViewFamilyType floorPlanType;
+                                    using (var fec = new FilteredElementCollector(_doc))
+                                    {
+                                        floorPlanType = fec
+                                            .OfClass(typeof(ViewFamilyType))
+                                            .Cast<ViewFamilyType>()
+                                            .FirstOrDefault(vft => vft.ViewFamily == ViewFamily.FloorPlan);
+                                    }
 
                                     if (floorPlanType != null)
                                     {
@@ -136,10 +144,14 @@ namespace RevitMCPCommandSet.Services.Architecture
                                 string ceilingPlanViewName = null;
                                 if (levelInfo.CreateCeilingPlan)
                                 {
-                                    var ceilingPlanType = new FilteredElementCollector(_doc)
-                                        .OfClass(typeof(ViewFamilyType))
-                                        .Cast<ViewFamilyType>()
-                                        .FirstOrDefault(vft => vft.ViewFamily == ViewFamily.CeilingPlan);
+                                    ViewFamilyType ceilingPlanType;
+                                    using (var fec = new FilteredElementCollector(_doc))
+                                    {
+                                        ceilingPlanType = fec
+                                            .OfClass(typeof(ViewFamilyType))
+                                            .Cast<ViewFamilyType>()
+                                            .FirstOrDefault(vft => vft.ViewFamily == ViewFamily.CeilingPlan);
+                                    }
 
                                     if (ceilingPlanType != null)
                                     {
@@ -235,7 +247,6 @@ namespace RevitMCPCommandSet.Services.Architecture
         /// <returns>True if completed before timeout</returns>
         public bool WaitForCompletion(int timeoutMilliseconds = 10000)
         {
-            _resetEvent.Reset();
         return _resetEvent.WaitOne(timeoutMilliseconds);
         }
 

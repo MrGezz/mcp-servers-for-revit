@@ -1,9 +1,10 @@
-﻿using RevitMCPCommandSet.Models.Common;
+﻿using RevitMCPCommandSet.Utils;
+using RevitMCPCommandSet.Models.Common;
 using RevitMCPSDK.API.Interfaces;
 
 namespace RevitMCPCommandSet.Services
 {
-    public class GetCurrentViewInfoEventHandler : IExternalEventHandler, IWaitableExternalEventHandler
+    public class GetCurrentViewInfoEventHandler : WaitableEventHandlerBase, IExternalEventHandler, IWaitableExternalEventHandler
     {
         // Execution result
         public CurrentViewInfo ResultInfo { get; private set; }
@@ -15,12 +16,10 @@ namespace RevitMCPCommandSet.Services
         /// error; without it a failure was indistinguishable from an empty answer.
         /// </summary>
         public string ErrorMessage { get; private set; }
-        private readonly ManualResetEvent _resetEvent = new ManualResetEvent(false);
 
         // Implements the IWaitableExternalEventHandler interface
         public bool WaitForCompletion(int timeoutMilliseconds = 10000)
         {
-            _resetEvent.Reset();
             return _resetEvent.WaitOne(timeoutMilliseconds);
         }
 

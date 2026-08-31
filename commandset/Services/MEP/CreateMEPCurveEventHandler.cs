@@ -1,16 +1,16 @@
+using RevitMCPCommandSet.Utils;
 using Autodesk.Revit.DB.Mechanical;
 using Autodesk.Revit.DB.Plumbing;
 using RevitMCPSDK.API.Interfaces;
 
 namespace RevitMCPCommandSet.Services.MEP
 {
-    public class CreateMEPCurveEventHandler : IExternalEventHandler, IWaitableExternalEventHandler
+    public class CreateMEPCurveEventHandler : WaitableEventHandlerBase, IExternalEventHandler, IWaitableExternalEventHandler
     {
         private UIApplication uiApp;
         private UIDocument uiDoc => uiApp.ActiveUIDocument;
         private Document doc => uiDoc.Document;
 
-        private readonly ManualResetEvent _resetEvent = new ManualResetEvent(false);
 
         public string MEPType { get; private set; }
         public double StartX { get; private set; }
@@ -63,10 +63,13 @@ namespace RevitMCPCommandSet.Services.MEP
                             MechanicalSystemType ductSystemType = null;
                             if (!string.IsNullOrEmpty(SystemType))
                             {
-                                ductSystemType = new FilteredElementCollector(doc)
-                                    .OfClass(typeof(MechanicalSystemType))
-                                    .Cast<MechanicalSystemType>()
-                                    .FirstOrDefault(dst => dst.Name.Contains(SystemType));
+                                using (var fec = new FilteredElementCollector(doc))
+                                {
+                                    ductSystemType = fec
+                                        .OfClass(typeof(MechanicalSystemType))
+                                        .Cast<MechanicalSystemType>()
+                                        .FirstOrDefault(dst => dst.Name.Contains(SystemType));
+                                }
                             }
 
                             Duct duct = VersionCompat.CreateDuct(doc, ductSystemType?.Id ?? ElementId.InvalidElementId, startPt, endPt, ElementId.InvalidElementId);
@@ -128,7 +131,6 @@ namespace RevitMCPCommandSet.Services.MEP
 
         public bool WaitForCompletion(int timeoutMilliseconds = 10000)
         {
-            _resetEvent.Reset();
             return _resetEvent.WaitOne(timeoutMilliseconds);
         }
 

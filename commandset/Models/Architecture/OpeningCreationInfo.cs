@@ -21,7 +21,9 @@
 // SOFTWARE.
 //
 
+using System.Runtime.Serialization;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Converters;
 using RevitMCPCommandSet.Models.Common;
 
 namespace RevitMCPCommandSet.Models.Architecture;
@@ -29,11 +31,16 @@ namespace RevitMCPCommandSet.Models.Architecture;
 /// <summary>
 ///     Type of opening
 /// </summary>
+[JsonConverter(typeof(StringEnumConverter))]
 public enum OpeningType
 {
+    [EnumMember(Value = "Wall")]
     WallOpening,
+    [EnumMember(Value = "Floor")]
     FloorOpening,
+    [EnumMember(Value = "Roof")]
     RoofOpening,
+    [EnumMember(Value = "Shaft")]
     ShaftOpening
 }
 

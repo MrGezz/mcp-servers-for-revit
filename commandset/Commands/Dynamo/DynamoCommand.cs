@@ -25,7 +25,7 @@ namespace RevitMCPCommandSet.Commands.Dynamo
     /// </remarks>
     public class DynamoCommand : ExternalEventCommandBase
     {
-        private static readonly object _executionLock = new object();
+        private readonly object _executionLock = new object();
         private DynamoEventHandler _handler => (DynamoEventHandler)Handler;
 
         public override string CommandName => "dynamo_op";

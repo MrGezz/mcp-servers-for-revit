@@ -5,7 +5,7 @@ import { withRevitConnection } from "../utils/ConnectionManager.js";
 export function registerCreateRampTool(server: McpServer) {
   server.tool(
     "create_ramp",
-    "Create ramps in the Revit model. Supports ramps with location, width, levels, type, and material. All units in mm.",
+    "Ramp creation is not supported. The Revit API (2022-2027) exposes no public ramp-creation surface. Use the Revit UI to create ramps.",
     {
       data: z.array(z.object({
         startPoint: z.object({ x: z.number(), y: z.number(), z: z.number() }).describe("Ramp start point in mm"),

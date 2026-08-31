@@ -1,17 +1,17 @@
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
+using RevitMCPCommandSet.Utils;
 using RevitMCPCommandSet.Models.DataExtraction;
 using RevitMCPSDK.API.Interfaces;
 
 namespace RevitMCPCommandSet.Services.DataExtraction
 {
-    public class AnalyzeModelStatisticsEventHandler : IExternalEventHandler, IWaitableExternalEventHandler
+    public class AnalyzeModelStatisticsEventHandler : WaitableEventHandlerBase, IExternalEventHandler, IWaitableExternalEventHandler
     {
         private bool _includeDetailedTypes;
 
         public AnalyzeModelStatisticsResult ResultInfo { get; private set; }
         public bool TaskCompleted { get; private set; }
-        private readonly ManualResetEvent _resetEvent = new ManualResetEvent(false);
 
         public void SetParameters(bool includeDetailedTypes = false)
         {
@@ -22,7 +22,6 @@ namespace RevitMCPCommandSet.Services.DataExtraction
 
         public bool WaitForCompletion(int timeoutMilliseconds = 10000)
         {
-            _resetEvent.Reset();
         return _resetEvent.WaitOne(timeoutMilliseconds);
         }
 
@@ -36,25 +35,24 @@ namespace RevitMCPCommandSet.Services.DataExtraction
                 string projectName = doc.Title;
 
                 // Count total elements
-                int totalElements = new FilteredElementCollector(doc)
-                    .WhereElementIsNotElementType()
-                    .GetElementCount();
+                int totalElements;
+                using (var coll = new FilteredElementCollector(doc))
+                    totalElements = coll.WhereElementIsNotElementType().GetElementCount();
 
                 // Count total types
-                int totalTypes = new FilteredElementCollector(doc)
-                    .WhereElementIsElementType()
-                    .GetElementCount();
+                int totalTypes;
+                using (var coll = new FilteredElementCollector(doc))
+                    totalTypes = coll.WhereElementIsElementType().GetElementCount();
 
                 // Count views
-                int totalViews = new FilteredElementCollector(doc)
-                    .OfClass(typeof(View))
-                    .Where(v => !(v as View).IsTemplate)
-                    .Count();
+                int totalViews;
+                using (var coll = new FilteredElementCollector(doc))
+                    totalViews = coll.OfClass(typeof(View)).Where(v => !(v as View).IsTemplate).Count();
 
                 // Count sheets
-                int totalSheets = new FilteredElementCollector(doc)
-                    .OfClass(typeof(ViewSheet))
-                    .GetElementCount();
+                int totalSheets;
+                using (var coll = new FilteredElementCollector(doc))
+                    totalSheets = coll.OfClass(typeof(ViewSheet)).GetElementCount();
 
                 // Analyze by category
                 var categoryStats = new Dictionary<string, CategoryStatistics>();
@@ -62,9 +60,9 @@ namespace RevitMCPCommandSet.Services.DataExtraction
                 var categoryFamilyNames = new Dictionary<string, HashSet<string>>();
                 var familyNames = new HashSet<string>();
 
-                var elements = new FilteredElementCollector(doc)
-                    .WhereElementIsNotElementType()
-                    .ToElements();
+                IList<Element> elements;
+                using (var coll = new FilteredElementCollector(doc))
+                    elements = coll.WhereElementIsNotElementType().ToElements();
 
                 foreach (Element elem in elements)
                 {
@@ -132,17 +130,15 @@ namespace RevitMCPCommandSet.Services.DataExtraction
 
                 // Analyze by level
                 var levelStats = new List<LevelStatistics>();
-                var levels = new FilteredElementCollector(doc)
-                    .OfClass(typeof(Level))
-                    .Cast<Level>()
-                    .OrderBy(l => l.Elevation);
+                List<Level> levels;
+                using (var coll = new FilteredElementCollector(doc))
+                    levels = coll.OfClass(typeof(Level)).Cast<Level>().OrderBy(l => l.Elevation).ToList();
 
                 foreach (Level level in levels)
                 {
-                    int elementCount = new FilteredElementCollector(doc)
-                        .WhereElementIsNotElementType()
-                        .Where(e => e.LevelId == level.Id)
-                        .Count();
+                    int elementCount;
+                    using (var coll = new FilteredElementCollector(doc))
+                        elementCount = coll.WhereElementIsNotElementType().Where(e => e.LevelId == level.Id).Count();
 
                     levelStats.Add(new LevelStatistics
                     {

@@ -1,14 +1,14 @@
-﻿using RevitMCPSDK.API.Interfaces;
+﻿using RevitMCPCommandSet.Utils;
+using RevitMCPSDK.API.Interfaces;
 
 namespace RevitMCPCommandSet.Services
 {
-    public class LoadFamilyEventHandler : IExternalEventHandler, IWaitableExternalEventHandler
+    public class LoadFamilyEventHandler : WaitableEventHandlerBase, IExternalEventHandler, IWaitableExternalEventHandler
     {
         private UIApplication uiApp;
         private UIDocument uiDoc => uiApp.ActiveUIDocument;
         private Document doc => uiDoc.Document;
 
-        private readonly ManualResetEvent _resetEvent = new ManualResetEvent(false);
 
         public string FilePath { get; private set; }
         public string FamilyName { get; private set; }
@@ -54,10 +54,14 @@ namespace RevitMCPCommandSet.Services
 
                         if (!string.IsNullOrEmpty(FamilyName))
                         {
-                            Family family = new FilteredElementCollector(doc)
-                                .OfClass(typeof(Family))
-                                .Cast<Family>()
-                                .FirstOrDefault(f => f.Name == FamilyName);
+                            Family family;
+                            using (var familyCollector = new FilteredElementCollector(doc))
+                            {
+                                family = familyCollector
+                                    .OfClass(typeof(Family))
+                                    .Cast<Family>()
+                                    .FirstOrDefault(f => f.Name == FamilyName);
+                            }
 
                             if (family == null)
                             {
@@ -107,7 +111,6 @@ namespace RevitMCPCommandSet.Services
 
         public bool WaitForCompletion(int timeoutMilliseconds = 30000)
         {
-            _resetEvent.Reset();
             return _resetEvent.WaitOne(timeoutMilliseconds);
         }
 

@@ -1,9 +1,10 @@
+using RevitMCPCommandSet.Utils;
 using RevitMCPCommandSet.Models.Architecture;
 using RevitMCPSDK.API.Interfaces;
 
 namespace RevitMCPCommandSet.Services
 {
-    public class CreateGridEventHandler : IExternalEventHandler, IWaitableExternalEventHandler
+    public class CreateGridEventHandler : WaitableEventHandlerBase, IExternalEventHandler, IWaitableExternalEventHandler
     {
         private UIApplication uiApp;
         private UIDocument uiDoc => uiApp.ActiveUIDocument;
@@ -12,7 +13,6 @@ namespace RevitMCPCommandSet.Services
         /// <summary>
         /// Event synchronization object
         /// </summary>
-        private readonly ManualResetEvent _resetEvent = new ManualResetEvent(false);
 
         /// <summary>
         /// Grid creation parameters
@@ -54,11 +54,15 @@ namespace RevitMCPCommandSet.Services
                 List<GridCreationResult> createdGrids = new List<GridCreationResult>();
 
                 // Get existing grid names for duplicate checking
-                var existingGridNames = new FilteredElementCollector(doc)
-                    .OfClass(typeof(Grid))
-                    .Cast<Grid>()
-                    .Select(g => g.Name)
-                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                HashSet<string> existingGridNames;
+                using (var gridCollector = new FilteredElementCollector(doc))
+                {
+                    existingGridNames = gridCollector
+                        .OfClass(typeof(Grid))
+                        .Cast<Grid>()
+                        .Select(g => g.Name)
+                        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                }
 
                 using (Transaction trans = new Transaction(doc, "Create Grid System"))
                 {
@@ -314,7 +318,6 @@ namespace RevitMCPCommandSet.Services
         /// </summary>
         public bool WaitForCompletion(int timeoutMilliseconds = 10000)
         {
-            _resetEvent.Reset();
         return _resetEvent.WaitOne(timeoutMilliseconds);
         }
 

@@ -1,14 +1,14 @@
-﻿using RevitMCPSDK.API.Interfaces;
+﻿using RevitMCPCommandSet.Utils;
+using RevitMCPSDK.API.Interfaces;
 
 namespace RevitMCPCommandSet.Services.Modify
 {
-    public class ManageGraphicsResourcesEventHandler : IExternalEventHandler, IWaitableExternalEventHandler
+    public class ManageGraphicsResourcesEventHandler : WaitableEventHandlerBase, IExternalEventHandler, IWaitableExternalEventHandler
     {
         private UIApplication uiApp;
         private UIDocument uiDoc => uiApp.ActiveUIDocument;
         private Document doc => uiDoc.Document;
 
-        private readonly ManualResetEvent _resetEvent = new ManualResetEvent(false);
 
         public string Action { get; private set; }
         public string ResourceName { get; private set; }
@@ -104,10 +104,12 @@ namespace RevitMCPCommandSet.Services.Modify
 
         private void HandleLineStyle()
         {
-            GraphicsStyle existingStyle = new FilteredElementCollector(doc)
-                .OfClass(typeof(GraphicsStyle))
-                .Cast<GraphicsStyle>()
-                .FirstOrDefault(gs => gs.Name == ResourceName);
+            GraphicsStyle existingStyle;
+            using (var coll = new FilteredElementCollector(doc))
+                existingStyle = coll
+                    .OfClass(typeof(GraphicsStyle))
+                    .Cast<GraphicsStyle>()
+                    .FirstOrDefault(gs => gs.Name == ResourceName);
 
             // Each miss below used to be silent. They are recorded now, and _applied is
             // what decides whether this handler reports success at all.
@@ -159,10 +161,12 @@ namespace RevitMCPCommandSet.Services.Modify
             if (Properties["linePattern"] != null)
             {
                 string patternName = Properties["linePattern"].Value<string>();
-                LinePatternElement pattern = new FilteredElementCollector(doc)
-                    .OfClass(typeof(LinePatternElement))
-                    .Cast<LinePatternElement>()
-                    .FirstOrDefault(lp => lp.Name == patternName);
+                LinePatternElement pattern;
+                using (var coll = new FilteredElementCollector(doc))
+                    pattern = coll
+                        .OfClass(typeof(LinePatternElement))
+                        .Cast<LinePatternElement>()
+                        .FirstOrDefault(lp => lp.Name == patternName);
 
                 if (pattern != null)
                 {
@@ -178,10 +182,12 @@ namespace RevitMCPCommandSet.Services.Modify
 
         private void HandleFillPattern()
         {
-            FillPatternElement existingPattern = new FilteredElementCollector(doc)
-                .OfClass(typeof(FillPatternElement))
-                .Cast<FillPatternElement>()
-                .FirstOrDefault(fp => fp.Name == ResourceName);
+            FillPatternElement existingPattern;
+            using (var coll = new FilteredElementCollector(doc))
+                existingPattern = coll
+                    .OfClass(typeof(FillPatternElement))
+                    .Cast<FillPatternElement>()
+                    .FirstOrDefault(fp => fp.Name == ResourceName);
 
             if (existingPattern == null)
             {
@@ -212,7 +218,6 @@ namespace RevitMCPCommandSet.Services.Modify
 
         public bool WaitForCompletion(int timeoutMilliseconds = 10000)
         {
-            _resetEvent.Reset();
             return _resetEvent.WaitOne(timeoutMilliseconds);
         }
 

@@ -1,16 +1,16 @@
-﻿using RevitMCPCommandSet.Models.MEP;
+﻿using RevitMCPCommandSet.Utils;
+using RevitMCPCommandSet.Models.MEP;
 using RevitMCPSDK.API.Interfaces;
 
 namespace RevitMCPCommandSet.Services.MEP
 {
-  public class CreateEquipmentEventHandler : IExternalEventHandler, IWaitableExternalEventHandler
+  public class CreateEquipmentEventHandler : WaitableEventHandlerBase, IExternalEventHandler, IWaitableExternalEventHandler
   {
     private UIApplication uiApp;
     private UIDocument uiDoc => uiApp.ActiveUIDocument;
     private Document doc => uiDoc.Document;
     private Autodesk.Revit.ApplicationServices.Application app => uiApp.Application;
 
-    private readonly ManualResetEvent _resetEvent = new ManualResetEvent(false);
 
     public List<EquipmentCreationInfo> CreatedInfo { get; private set; }
 
@@ -61,21 +61,27 @@ namespace RevitMCPCommandSet.Services.MEP
 
             if (!string.IsNullOrEmpty(data.FamilyName))
             {
-              symbol = new FilteredElementCollector(doc)
-                  .OfClass(typeof(FamilySymbol))
-                  .Cast<FamilySymbol>()
-                  .FirstOrDefault(fs =>
-                      fs.FamilyName.Equals(data.FamilyName, StringComparison.OrdinalIgnoreCase) &&
-                      (string.IsNullOrEmpty(data.EquipmentType) ||
-                       fs.Name.Equals(data.EquipmentType, StringComparison.OrdinalIgnoreCase)));
+              using (var fec = new FilteredElementCollector(doc))
+              {
+                symbol = fec
+                    .OfClass(typeof(FamilySymbol))
+                    .Cast<FamilySymbol>()
+                    .FirstOrDefault(fs =>
+                        fs.FamilyName.Equals(data.FamilyName, StringComparison.OrdinalIgnoreCase) &&
+                        (string.IsNullOrEmpty(data.EquipmentType) ||
+                         fs.Name.Equals(data.EquipmentType, StringComparison.OrdinalIgnoreCase)));
+              }
             }
 
             if (symbol == null)
             {
-              symbol = new FilteredElementCollector(doc)
-                  .OfClass(typeof(FamilySymbol))
-                  .Cast<FamilySymbol>()
-                  .FirstOrDefault(fs => fs.IsActive);
+              using (var fec = new FilteredElementCollector(doc))
+              {
+                symbol = fec
+                    .OfClass(typeof(FamilySymbol))
+                    .Cast<FamilySymbol>()
+                    .FirstOrDefault(fs => fs.IsActive);
+              }
             }
 
             if (symbol == null)
@@ -156,7 +162,6 @@ namespace RevitMCPCommandSet.Services.MEP
 
     public bool WaitForCompletion(int timeoutMilliseconds = 15000)
     {
-      _resetEvent.Reset();
       return _resetEvent.WaitOne(timeoutMilliseconds);
     }
 

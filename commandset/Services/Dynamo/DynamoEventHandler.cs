@@ -1,3 +1,4 @@
+using RevitMCPCommandSet.Utils;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -40,9 +41,8 @@ namespace RevitMCPCommandSet.Services.Dynamo
     /// version this code has never seen produces a diagnosable answer instead of
     /// a null reference.
     /// </remarks>
-    public class DynamoEventHandler : IExternalEventHandler, IWaitableExternalEventHandler
+    public class DynamoEventHandler : WaitableEventHandlerBase, IExternalEventHandler, IWaitableExternalEventHandler
     {
-        private readonly ManualResetEvent _resetEvent = new ManualResetEvent(false);
 
         /// <summary>"status", "open" or "run".</summary>
         public string Op { get; set; } = "status";
@@ -55,7 +55,6 @@ namespace RevitMCPCommandSet.Services.Dynamo
 
         public bool WaitForCompletion(int timeoutMilliseconds = 60000)
         {
-            _resetEvent.Reset();
             return _resetEvent.WaitOne(timeoutMilliseconds);
         }
 

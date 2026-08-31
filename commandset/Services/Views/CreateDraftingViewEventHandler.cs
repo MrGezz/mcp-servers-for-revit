@@ -1,14 +1,14 @@
+using RevitMCPCommandSet.Utils;
 using RevitMCPSDK.API.Interfaces;
 
 namespace RevitMCPCommandSet.Services.Views
 {
-    public class CreateDraftingViewEventHandler : IExternalEventHandler, IWaitableExternalEventHandler
+    public class CreateDraftingViewEventHandler : WaitableEventHandlerBase, IExternalEventHandler, IWaitableExternalEventHandler
     {
         private UIApplication uiApp;
         private UIDocument uiDoc => uiApp.ActiveUIDocument;
         private Document doc => uiDoc.Document;
 
-        private readonly ManualResetEvent _resetEvent = new ManualResetEvent(false);
 
         public string ViewName { get; private set; }
         public int Scale { get; private set; }
@@ -34,10 +34,14 @@ namespace RevitMCPCommandSet.Services.Views
                 {
                     trans.Start();
 
-                    ViewFamilyType vft = new FilteredElementCollector(doc)
-                        .OfClass(typeof(ViewFamilyType))
-                        .Cast<ViewFamilyType>()
-                        .FirstOrDefault(vftype => vftype.ViewFamily == ViewFamily.Drafting);
+                    ViewFamilyType vft;
+                    using (var collector = new FilteredElementCollector(doc))
+                    {
+                        vft = collector
+                            .OfClass(typeof(ViewFamilyType))
+                            .Cast<ViewFamilyType>()
+                            .FirstOrDefault(vftype => vftype.ViewFamily == ViewFamily.Drafting);
+                    }
 
                     if (vft == null)
                     {
@@ -54,7 +58,28 @@ namespace RevitMCPCommandSet.Services.Views
 
                     if (Scale > 0)
                     {
-                        view.get_Parameter(BuiltInParameter.VIEW_SCALE)?.Set(Scale);
+                        // Defect 26. This replaced
+                        // get_Parameter(BuiltInParameter.VIEW_SCALE)?.Set(Scale),
+                        // where the '?.' guarded only a NULL parameter and did nothing
+                        // about a non-null READ-ONLY one.
+                        //
+                        // The catch is not optional and it is not symmetry for its own
+                        // sake: View.Scale throws when a view template controls the
+                        // scale, and an uncaught throw here escapes the external-event
+                        // handler and loses the whole drafting view over an optional
+                        // field. The sibling fixes in SetViewProperties and CreateView
+                        // guard the same way.
+                        try
+                        {
+                            view.Scale = Scale;
+                        }
+                        catch (Autodesk.Revit.Exceptions.InvalidOperationException)
+                        {
+                            // View created; scale is template-controlled and was not applied.
+                        }
+                        catch (InvalidOperationException)
+                        {
+                        }
                     }
 
                     if (!string.IsNullOrEmpty(DetailLevel))
@@ -101,7 +126,6 @@ namespace RevitMCPCommandSet.Services.Views
 
         public bool WaitForCompletion(int timeoutMilliseconds = 10000)
         {
-            _resetEvent.Reset();
             return _resetEvent.WaitOne(timeoutMilliseconds);
         }
 

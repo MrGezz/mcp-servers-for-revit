@@ -8,6 +8,14 @@ namespace RevitMCPCommandSet.Commands.Architecture
 {
     public class CreateStairCommand : ExternalEventCommandBase
     {
+        // Instance-level, not static: ExternalEvent.Raise() already serialises
+        // EXECUTION on the Revit UI thread, so a static lock would serialise
+        // unrelated commands against each other for no benefit. What is
+        // unprotected is this command's SHARED HANDLER INSTANCE - the registry
+        // keeps one per command name - between SetParameters() and the handler
+        // reading those parameters on the UI thread.
+        private readonly object _executionLock = new object();
+
         private CreateStairEventHandler _handler => (CreateStairEventHandler)Handler;
 
         public override string CommandName => "create_stair";
@@ -19,27 +27,30 @@ namespace RevitMCPCommandSet.Commands.Architecture
 
         public override object Execute(JObject parameters, string requestId)
         {
-            try
+            lock (_executionLock)
             {
-                List<StairCreationInfo> data = parameters["data"].ToObject<List<StairCreationInfo>>();
-                if (data == null)
-                    throw new ArgumentNullException(nameof(data), "No stair data provided");
-
-                _handler.SetParameters(data);
-
-                if (RaiseAndWaitForCompletion(30000))
+                try
                 {
-                    return _handler.Result;
+                    List<StairCreationInfo> data = parameters["data"].ToObject<List<StairCreationInfo>>();
+                    if (data == null)
+                        throw new ArgumentNullException(nameof(data), "No stair data provided");
+
+                    _handler.SetParameters(data);
+
+                    if (RaiseAndWaitForCompletion(30000))
+                    {
+                        return _handler.Result;
+                    }
+                    else
+                    {
+                        throw new TimeoutException("Create stair operation timed out");
+                    }
                 }
-                else
+                catch (Exception ex)
                 {
-                    throw new TimeoutException("Create stair operation timed out");
+                    throw new Exception($"Failed to create stair: {ex.Message}");
                 }
-            }
-            catch (Exception ex)
-            {
-                throw new Exception($"Failed to create stair: {ex.Message}");
-            }
+                    }
         }
     }
 }

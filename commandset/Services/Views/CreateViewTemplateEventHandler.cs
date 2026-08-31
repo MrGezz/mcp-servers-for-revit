@@ -1,14 +1,14 @@
-﻿using RevitMCPSDK.API.Interfaces;
+﻿using RevitMCPCommandSet.Utils;
+using RevitMCPSDK.API.Interfaces;
 
 namespace RevitMCPCommandSet.Services.Views
 {
-    public class CreateViewTemplateEventHandler : IExternalEventHandler, IWaitableExternalEventHandler
+    public class CreateViewTemplateEventHandler : WaitableEventHandlerBase, IExternalEventHandler, IWaitableExternalEventHandler
     {
         private UIApplication uiApp;
         private UIDocument uiDoc => uiApp.ActiveUIDocument;
         private Document doc => uiDoc.Document;
 
-        private readonly ManualResetEvent _resetEvent = new ManualResetEvent(false);
 
         public int SourceViewId { get; private set; }
         public string TemplateName { get; private set; }
@@ -75,7 +75,6 @@ namespace RevitMCPCommandSet.Services.Views
 
         public bool WaitForCompletion(int timeoutMilliseconds = 10000)
         {
-            _resetEvent.Reset();
             return _resetEvent.WaitOne(timeoutMilliseconds);
         }
 

@@ -1,12 +1,12 @@
-﻿using RevitMCPSDK.API.Interfaces;
+﻿using RevitMCPCommandSet.Utils;
+using RevitMCPSDK.API.Interfaces;
 
 namespace RevitMCPCommandSet.Services.Query
 {
-    public class QueryReferencesEventHandler : IExternalEventHandler, IWaitableExternalEventHandler
+    public class QueryReferencesEventHandler : WaitableEventHandlerBase, IExternalEventHandler, IWaitableExternalEventHandler
     {
         private UIApplication uiApp;
         private Document Doc => uiApp.ActiveUIDocument.Document;
-        private readonly ManualResetEvent _resetEvent = new(false);
         public int ElementId { get; private set; }
         public AIResult<List<object>> Result { get; private set; }
 
@@ -90,7 +90,6 @@ namespace RevitMCPCommandSet.Services.Query
 
         public bool WaitForCompletion(int timeout = 10000)
         {
-            _resetEvent.Reset();
             return _resetEvent.WaitOne(timeout);
         }
 

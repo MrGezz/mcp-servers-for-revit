@@ -1,14 +1,14 @@
-﻿using RevitMCPSDK.API.Interfaces;
+﻿using RevitMCPCommandSet.Utils;
+using RevitMCPSDK.API.Interfaces;
 
 namespace RevitMCPCommandSet.Services.Views
 {
-    public class SetViewPropertiesEventHandler : IExternalEventHandler, IWaitableExternalEventHandler
+    public class SetViewPropertiesEventHandler : WaitableEventHandlerBase, IExternalEventHandler, IWaitableExternalEventHandler
     {
         private UIApplication uiApp;
         private UIDocument uiDoc => uiApp.ActiveUIDocument;
         private Document doc => uiDoc.Document;
 
-        private readonly ManualResetEvent _resetEvent = new ManualResetEvent(false);
 
         public int ViewId { get; private set; }
         public JObject Properties { get; private set; }
@@ -48,7 +48,14 @@ namespace RevitMCPCommandSet.Services.Views
                     if (Properties["scale"] != null)
                     {
                         int scaleVal = Properties["scale"].Value<int>();
-                        view.get_Parameter(BuiltInParameter.VIEW_SCALE)?.Set(scaleVal);
+                        try
+                        {
+                            view.Scale = scaleVal;
+                        }
+                        catch (Autodesk.Revit.Exceptions.InvalidOperationException)
+                        {
+                            // Scale is read-only when controlled by a view template; skip silently.
+                        }
                     }
 
                     if (Properties["detailLevel"] != null)
@@ -83,10 +90,10 @@ namespace RevitMCPCommandSet.Services.Views
                             case "realistic": styleValue = 4; break;
                         }
 #if REVIT2026_OR_GREATER
-                        view.get_Parameter(BuiltInParameter.MODEL_GRAPHICS_STYLE)?.Set(styleValue);
+                        view.DisplayStyle = (DisplayStyle)styleValue;
 #else
-                        // R20-R25: use VIEW_DISPLAY_STYLE or MODEL_GRAPHICS_STYLE
-                        view.get_Parameter(BuiltInParameter.MODEL_GRAPHICS_STYLE)?.Set(styleValue);
+                        // R20-R25: DisplayStyle property exists on View across the full span.
+                        view.DisplayStyle = (DisplayStyle)styleValue;
 #endif
                     }
 
@@ -148,7 +155,6 @@ namespace RevitMCPCommandSet.Services.Views
 
         public bool WaitForCompletion(int timeoutMilliseconds = 10000)
         {
-            _resetEvent.Reset();
             return _resetEvent.WaitOne(timeoutMilliseconds);
         }
 

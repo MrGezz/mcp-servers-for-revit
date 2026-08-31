@@ -7,6 +7,14 @@ namespace RevitMCPCommandSet.Commands.MEP
 {
     public class CreateMEPCurveCommand : ExternalEventCommandBase
     {
+        // Instance-level, not static: ExternalEvent.Raise() already serialises
+        // EXECUTION on the Revit UI thread, so a static lock would serialise
+        // unrelated commands against each other for no benefit. What is
+        // unprotected is this command's SHARED HANDLER INSTANCE - the registry
+        // keeps one per command name - between SetParameters() and the handler
+        // reading those parameters on the UI thread.
+        private readonly object _executionLock = new object();
+
         private CreateMEPCurveEventHandler _handler => (CreateMEPCurveEventHandler)Handler;
 
         public override string CommandName => "create_mep_curve";
@@ -18,34 +26,37 @@ namespace RevitMCPCommandSet.Commands.MEP
 
         public override object Execute(JObject parameters, string requestId)
         {
-            try
+            lock (_executionLock)
             {
-                string mepType = parameters["mepType"]?.Value<string>() ?? "duct";
-                JObject startObj = parameters["start"] as JObject;
-                JObject endObj = parameters["end"] as JObject;
+                try
+                {
+                    string mepType = parameters["mepType"]?.Value<string>() ?? "duct";
+                    JObject startObj = parameters["start"] as JObject;
+                    JObject endObj = parameters["end"] as JObject;
 
-                double startX = startObj?["x"]?.Value<double>() ?? 0;
-                double startY = startObj?["y"]?.Value<double>() ?? 0;
-                double startZ = startObj?["z"]?.Value<double>() ?? 0;
-                double endX = endObj?["x"]?.Value<double>() ?? 10;
-                double endY = endObj?["y"]?.Value<double>() ?? 10;
-                double endZ = endObj?["z"]?.Value<double>() ?? 0;
+                    double startX = startObj?["x"]?.Value<double>() ?? 0;
+                    double startY = startObj?["y"]?.Value<double>() ?? 0;
+                    double startZ = startObj?["z"]?.Value<double>() ?? 0;
+                    double endX = endObj?["x"]?.Value<double>() ?? 10;
+                    double endY = endObj?["y"]?.Value<double>() ?? 10;
+                    double endZ = endObj?["z"]?.Value<double>() ?? 0;
 
-                double level = parameters["level"]?.Value<double>() ?? 0;
-                double diameter = parameters["diameter"]?.Value<double>() ?? 200;
-                string systemType = parameters["systemType"]?.Value<string>();
+                    double level = parameters["level"]?.Value<double>() ?? 0;
+                    double diameter = parameters["diameter"]?.Value<double>() ?? 200;
+                    string systemType = parameters["systemType"]?.Value<string>();
 
-                _handler.SetParameters(mepType, startX, startY, startZ, endX, endY, endZ, level, diameter, systemType);
+                    _handler.SetParameters(mepType, startX, startY, startZ, endX, endY, endZ, level, diameter, systemType);
 
-                if (RaiseAndWaitForCompletion(10000))
-                    return _handler.Result;
-                else
-                    throw new TimeoutException("Create MEP curve operation timed out");
-            }
-            catch (Exception ex)
-            {
-                throw new Exception($"Failed to create MEP curve: {ex.Message}");
-            }
+                    if (RaiseAndWaitForCompletion(10000))
+                        return _handler.Result;
+                    else
+                        throw new TimeoutException("Create MEP curve operation timed out");
+                }
+                catch (Exception ex)
+                {
+                    throw new Exception($"Failed to create MEP curve: {ex.Message}");
+                }
+                    }
         }
     }
 }

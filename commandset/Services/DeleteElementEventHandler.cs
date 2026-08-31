@@ -1,10 +1,11 @@
-﻿using Autodesk.Revit.DB;
+﻿using RevitMCPCommandSet.Utils;
+using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using RevitMCPSDK.API.Interfaces;
 
 namespace RevitMCPCommandSet.Services
 {
-    public class DeleteElementEventHandler : IExternalEventHandler, IWaitableExternalEventHandler
+    public class DeleteElementEventHandler : WaitableEventHandlerBase, IExternalEventHandler, IWaitableExternalEventHandler
     {
         // Execution result
         public bool IsSuccess { get; private set; }
@@ -21,13 +22,11 @@ namespace RevitMCPCommandSet.Services
         public string ErrorMessage { get; private set; }
         // State synchronization object
         public bool TaskCompleted { get; private set; }
-        private readonly ManualResetEvent _resetEvent = new ManualResetEvent(false);
         // Array of element IDs to delete
         public string[] ElementIds { get; set; }
         // IWaitableExternalEventHandler interface implementation
         public bool WaitForCompletion(int timeoutMilliseconds = 10000)
         {
-            _resetEvent.Reset();
         return _resetEvent.WaitOne(timeoutMilliseconds);
         }
         public void Execute(UIApplication app)

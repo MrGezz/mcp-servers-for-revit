@@ -13,7 +13,7 @@ namespace RevitMCPCommandSet.Commands.Access
 {
     public class GetSelectedElementsCommand : ExternalEventCommandBase
     {
-        private static readonly object _executionLock = new object();
+        private readonly object _executionLock = new object();
         private GetSelectedElementsEventHandler _handler => (GetSelectedElementsEventHandler)Handler;
 
         public override string CommandName => "get_selected_elements";

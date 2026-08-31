@@ -1,18 +1,18 @@
 ﻿using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using Newtonsoft.Json.Linq;
+using RevitMCPCommandSet.Utils;
 using RevitMCPCommandSet.Models.Common;
 using RevitMCPSDK.API.Interfaces;
 
 namespace RevitMCPCommandSet.Services.Views
 {
-    public class SetCategoryOverridesEventHandler : IExternalEventHandler, IWaitableExternalEventHandler
+    public class SetCategoryOverridesEventHandler : WaitableEventHandlerBase, IExternalEventHandler, IWaitableExternalEventHandler
     {
         private UIApplication uiApp;
         private UIDocument uiDoc => uiApp.ActiveUIDocument;
         private Document doc => uiDoc.Document;
 
-        private readonly ManualResetEvent _resetEvent = new ManualResetEvent(false);
 
         public int ViewId { get; private set; }
         public int CategoryId { get; private set; }
@@ -74,10 +74,14 @@ namespace RevitMCPCommandSet.Services.Views
                         if (Overrides["fillPattern"] != null)
                         {
                             string fpName = Overrides["fillPattern"].Value<string>();
-                            FillPatternElement fpElem = new FilteredElementCollector(doc)
-                                .OfClass(typeof(FillPatternElement))
-                                .Cast<FillPatternElement>()
-                                .FirstOrDefault(fp => fp.Name == fpName);
+                            FillPatternElement fpElem;
+                            using (var collector = new FilteredElementCollector(doc))
+                            {
+                                fpElem = collector
+                                    .OfClass(typeof(FillPatternElement))
+                                    .Cast<FillPatternElement>()
+                                    .FirstOrDefault(fp => fp.Name == fpName);
+                            }
                             if (fpElem != null)
                             {
                                 overrideSettings.SetSurfaceForegroundPatternId(fpElem.Id);
@@ -127,7 +131,6 @@ namespace RevitMCPCommandSet.Services.Views
 
         public bool WaitForCompletion(int timeoutMilliseconds = 10000)
         {
-            _resetEvent.Reset();
             return _resetEvent.WaitOne(timeoutMilliseconds);
         }
 

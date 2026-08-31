@@ -1,9 +1,10 @@
-﻿using RevitMCPCommandSet.Models.Common;
+﻿using RevitMCPCommandSet.Utils;
+using RevitMCPCommandSet.Models.Common;
 using RevitMCPSDK.API.Interfaces;
 
 namespace RevitMCPCommandSet.Services
 {
-    public class GetAvailableFamilyTypesEventHandler : IExternalEventHandler, IWaitableExternalEventHandler
+    public class GetAvailableFamilyTypesEventHandler : WaitableEventHandlerBase, IExternalEventHandler, IWaitableExternalEventHandler
     {
         // Execution result
         public List<FamilyTypeInfo> ResultFamilyTypes { get; private set; }
@@ -15,7 +16,6 @@ namespace RevitMCPCommandSet.Services
         /// error; without it a failure was indistinguishable from an empty answer.
         /// </summary>
         public string ErrorMessage { get; private set; }
-        private readonly ManualResetEvent _resetEvent = new ManualResetEvent(false);
 
         // Filter criteria
         public List<string> CategoryList { get; set; }
@@ -25,7 +25,6 @@ namespace RevitMCPCommandSet.Services
         // Execution timeout, slightly shorter than the caller's timeout
         public bool WaitForCompletion(int timeoutMilliseconds = 12500)
         {
-            _resetEvent.Reset();
             return _resetEvent.WaitOne(timeoutMilliseconds);
         }
 
@@ -35,17 +34,30 @@ namespace RevitMCPCommandSet.Services
             {
                 var doc = app.ActiveUIDocument.Document;
 
-                // Loadable families
-                var familySymbols = new FilteredElementCollector(doc)
-                    .OfClass(typeof(FamilySymbol))
-                    .Cast<FamilySymbol>();
+                // Loadable families.
+                //
+                // P1-1. This chain ends in .Cast<FamilySymbol>(), which is LAZY, and
+                // the result is enumerated further down when the system types are
+                // merged. Hoisting the collector into a using block without forcing
+                // enumeration first would dispose it before that merge reads it -
+                // turning a handle leak into a use-after-dispose. So the results are
+                // MATERIALISED inside the block, and the collector is disposed on the
+                // way out with the elements already in hand.
+                List<FamilySymbol> familySymbols;
+                using (var symbolCollector = new FilteredElementCollector(doc))
+                {
+                    familySymbols = symbolCollector
+                        .OfClass(typeof(FamilySymbol))
+                        .Cast<FamilySymbol>()
+                        .ToList();
+                }
                 // System family types (walls, floors, etc.)
                 var systemTypes = new List<ElementType>();
-                systemTypes.AddRange(new FilteredElementCollector(doc).OfClass(typeof(WallType)).Cast<ElementType>());
-                systemTypes.AddRange(new FilteredElementCollector(doc).OfClass(typeof(FloorType)).Cast<ElementType>());
-                systemTypes.AddRange(new FilteredElementCollector(doc).OfClass(typeof(RoofType)).Cast<ElementType>());
-                systemTypes.AddRange(new FilteredElementCollector(doc).OfClass(typeof(CeilingType)).Cast<ElementType>());
-                systemTypes.AddRange(new FilteredElementCollector(doc).OfClass(typeof(CurtainSystemType)).Cast<ElementType>());
+                using (var wc = new FilteredElementCollector(doc)) { systemTypes.AddRange(wc.OfClass(typeof(WallType)).Cast<ElementType>()); }
+                using (var fc = new FilteredElementCollector(doc)) { systemTypes.AddRange(fc.OfClass(typeof(FloorType)).Cast<ElementType>()); }
+                using (var rc = new FilteredElementCollector(doc)) { systemTypes.AddRange(rc.OfClass(typeof(RoofType)).Cast<ElementType>()); }
+                using (var cc = new FilteredElementCollector(doc)) { systemTypes.AddRange(cc.OfClass(typeof(CeilingType)).Cast<ElementType>()); }
+                using (var csc = new FilteredElementCollector(doc)) { systemTypes.AddRange(csc.OfClass(typeof(CurtainSystemType)).Cast<ElementType>()); }
                 // Merge results
                 var allElements = familySymbols
                     .Cast<ElementType>()

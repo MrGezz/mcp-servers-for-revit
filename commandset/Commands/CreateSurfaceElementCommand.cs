@@ -8,6 +8,14 @@ namespace RevitMCPCommandSet.Commands
 {
     public class CreateSurfaceElementCommand : ExternalEventCommandBase
     {
+        // Instance-level, not static: ExternalEvent.Raise() already serialises
+        // EXECUTION on the Revit UI thread, so a static lock would serialise
+        // unrelated commands against each other for no benefit. What is
+        // unprotected is this command's SHARED HANDLER INSTANCE - the registry
+        // keeps one per command name - between SetParameters() and the handler
+        // reading those parameters on the UI thread.
+        private readonly object _executionLock = new object();
+
         private CreateSurfaceElementEventHandler _handler => (CreateSurfaceElementEventHandler)Handler;
 
         /// <summary>
@@ -26,31 +34,34 @@ namespace RevitMCPCommandSet.Commands
 
         public override object Execute(JObject parameters, string requestId)
         {
-            try
+            lock (_executionLock)
             {
-                List<SurfaceElement> data = new List<SurfaceElement>();
-                // Parse parameters
-                data = parameters["data"].ToObject<List<SurfaceElement>>();
-                if (data == null)
-                    throw new ArgumentNullException(nameof(data), "Input data is null");
-
-                // Set surface element parameters
-                _handler.SetParameters(data);
-
-                // Raise the external event and wait for completion
-                if (RaiseAndWaitForCompletion(10000))
+                try
                 {
-                    return _handler.Result;
+                    List<SurfaceElement> data = new List<SurfaceElement>();
+                    // Parse parameters
+                    data = parameters["data"].ToObject<List<SurfaceElement>>();
+                    if (data == null)
+                        throw new ArgumentNullException(nameof(data), "Input data is null");
+
+                    // Set surface element parameters
+                    _handler.SetParameters(data);
+
+                    // Raise the external event and wait for completion
+                    if (RaiseAndWaitForCompletion(10000))
+                    {
+                        return _handler.Result;
+                    }
+                    else
+                    {
+                        throw new TimeoutException("Create surface element operation timed out");
+                    }
                 }
-                else
+                catch (Exception ex)
                 {
-                    throw new TimeoutException("Create surface element operation timed out");
+                    throw new Exception($"Failed to create surface element: {ex.Message}");
                 }
-            }
-            catch (Exception ex)
-            {
-                throw new Exception($"Failed to create surface element: {ex.Message}");
-            }
+                    }
         }
     }
 }

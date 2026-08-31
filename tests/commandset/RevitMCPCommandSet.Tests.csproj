@@ -1,9 +1,57 @@
 ﻿<Project Sdk="Nice3point.Revit.Sdk/6.1.0">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <Configurations>Debug.R25</Configurations>
-    <Configurations>$(Configurations);Release.R25</Configurations>
-    <DefineConstants>$(DefineConstants);REVIT2023_OR_GREATER;REVIT2024_OR_GREATER;REVIT2025_OR_GREATER;REVIT2026_OR_GREATER</DefineConstants>
+    <!-- R26 and R27 were missing: the README documents `dotnet test -c Debug.R26`
+         and that configuration was never declared here. -->
+    <Configurations>Debug.R25;Release.R25;Debug.R26;Release.R26;Debug.R27;Release.R27</Configurations>
+  </PropertyGroup>
+
+  <!--
+      THE TEST HOST MUST MATCH THE RUNTIME OF THE REVIT IT INJECTS INTO.
+
+      These tests do not run beside Revit; Nice3point.TUnit.Revit injects them into
+      the live Revit process, so the test executable loads Revit's own assemblies.
+      Forward rollforward makes a net8.0 ADD-IN load happily inside a .NET 10 host -
+      which is why the shipped add-in stays net8.0 for R26 - but the reverse does not
+      hold: a net8.0 test PROCESS cannot load net10 assemblies.
+
+      MEASURED on this machine, from the TargetFrameworkAttribute of each install's
+      RevitAPI.dll rather than from documentation:
+
+          Revit 2025 (25.x)        .NETCoreApp v8.0
+          Revit 2026 (26.5.0.55)   .NETCoreApp v10.0     <- bumped mid-cycle
+          Revit 2027 (27.2.0.39)   .NETCoreApp v10.0
+
+      Building the tests net8.0 against Revit 2026.5 fails every test in about a
+      second with 'Could not load file or assembly System.Runtime, Version=10.0.0.0'.
+      That is not 170 broken tests; it is one wrong TargetFramework.
+
+      Revit 2026.0-2026.2 shipped on .NET 8. If that is the Revit you are testing
+      against, override the property:
+
+          dotnet test -c Debug.R26 -r win-x64 -p:RevitTestTfm=net8.0-windows10.0.19041.0
+  -->
+  <PropertyGroup Condition="$(Configuration.Contains('R25'))">
+    <RevitVersion>2025</RevitVersion>
+    <RevitTestTfm Condition="'$(RevitTestTfm)' == ''">net8.0-windows10.0.19041.0</RevitTestTfm>
+    <DefineConstants>$(DefineConstants);REVIT2022_OR_GREATER;REVIT2023_OR_GREATER;REVIT2024_OR_GREATER;REVIT2025_OR_GREATER</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition="$(Configuration.Contains('R26'))">
+    <RevitVersion>2026</RevitVersion>
+    <RevitTestTfm Condition="'$(RevitTestTfm)' == ''">net10.0-windows10.0.19041.0</RevitTestTfm>
+    <DefineConstants>$(DefineConstants);REVIT2022_OR_GREATER;REVIT2023_OR_GREATER;REVIT2024_OR_GREATER;REVIT2025_OR_GREATER;REVIT2026_OR_GREATER</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition="$(Configuration.Contains('R27'))">
+    <RevitVersion>2027</RevitVersion>
+    <RevitTestTfm Condition="'$(RevitTestTfm)' == ''">net10.0-windows10.0.19041.0</RevitTestTfm>
+    <DefineConstants>$(DefineConstants);REVIT2022_OR_GREATER;REVIT2023_OR_GREATER;REVIT2024_OR_GREATER;REVIT2025_OR_GREATER;REVIT2026_OR_GREATER;REVIT2027_OR_GREATER</DefineConstants>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <!-- Set after the per-configuration blocks so the override above wins. The old
+         file defined REVIT2026_OR_GREATER unconditionally, so an R25 build silently
+         compiled the 2026 side of every #if. -->
+    <TargetFramework>$(RevitTestTfm)</TargetFramework>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Nice3point.Revit.Api.RevitAPI" Version="$(RevitVersion).*" />

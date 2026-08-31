@@ -1,16 +1,16 @@
 ﻿using Autodesk.Revit.DB.Structure;
+using RevitMCPCommandSet.Utils;
 using RevitMCPCommandSet.Models.Architecture;
 using RevitMCPSDK.API.Interfaces;
 
 namespace RevitMCPCommandSet.Services.Architecture
 {
-    public class CreateColumnEventHandler : IExternalEventHandler, IWaitableExternalEventHandler
+    public class CreateColumnEventHandler : WaitableEventHandlerBase, IExternalEventHandler, IWaitableExternalEventHandler
     {
         private UIApplication _uiApp;
         private UIDocument _uiDoc => _uiApp.ActiveUIDocument;
         private Document _doc => _uiDoc.Document;
 
-        private readonly ManualResetEvent _resetEvent = new ManualResetEvent(false);
 
         public List<ColumnInfo> ColumnData { get; private set; }
 
@@ -46,11 +46,14 @@ namespace RevitMCPCommandSet.Services.Architecture
 
                     if (symbol == null && !string.IsNullOrEmpty(info.Type))
                     {
-                        symbol = new FilteredElementCollector(_doc)
-                            .OfClass(typeof(FamilySymbol))
-                            .Cast<FamilySymbol>()
-                            .FirstOrDefault(fs => fs.FamilyName != null &&
-                                fs.get_Parameter(BuiltInParameter.ALL_MODEL_TYPE_NAME)?.AsString()?.Equals(info.Type, StringComparison.OrdinalIgnoreCase) == true);
+                        using (var fec = new FilteredElementCollector(_doc))
+                        {
+                            symbol = fec
+                                .OfClass(typeof(FamilySymbol))
+                                .Cast<FamilySymbol>()
+                                .FirstOrDefault(fs => fs.FamilyName != null &&
+                                    fs.get_Parameter(BuiltInParameter.ALL_MODEL_TYPE_NAME)?.AsString()?.Equals(info.Type, StringComparison.OrdinalIgnoreCase) == true);
+                        }
                         if (symbol == null)
                         {
                             _warnings.Add($"Column type '{info.Type}' not found, using first available structural column symbol");
@@ -59,11 +62,14 @@ namespace RevitMCPCommandSet.Services.Architecture
 
                     if (symbol == null)
                     {
-                        symbol = new FilteredElementCollector(_doc)
-                            .OfClass(typeof(FamilySymbol))
-                            .Cast<FamilySymbol>()
-                            .FirstOrDefault(fs => fs.FamilyName != null &&
-                                fs.Category != null && VersionCompat.GetBuiltInCategory(fs.Category) == BuiltInCategory.OST_StructuralColumns);
+                        using (var fec = new FilteredElementCollector(_doc))
+                        {
+                            symbol = fec
+                                .OfClass(typeof(FamilySymbol))
+                                .Cast<FamilySymbol>()
+                                .FirstOrDefault(fs => fs.FamilyName != null &&
+                                    fs.Category != null && VersionCompat.GetBuiltInCategory(fs.Category) == BuiltInCategory.OST_StructuralColumns);
+                        }
                     }
 
                     if (symbol == null) continue;
@@ -149,10 +155,14 @@ namespace RevitMCPCommandSet.Services.Architecture
 
         private Level FindNearestLevel(double elevationInFeet)
         {
-            var levels = new FilteredElementCollector(_doc)
-                .OfClass(typeof(Level))
-                .Cast<Level>()
-                .ToList();
+            List<Level> levels;
+            using (var fec = new FilteredElementCollector(_doc))
+            {
+                levels = fec
+                    .OfClass(typeof(Level))
+                    .Cast<Level>()
+                    .ToList();
+            }
 
             Level nearestLevel = null;
             double minDistance = double.MaxValue;
@@ -172,7 +182,6 @@ namespace RevitMCPCommandSet.Services.Architecture
 
         public bool WaitForCompletion(int timeoutMilliseconds = 10000)
         {
-            _resetEvent.Reset();
             return _resetEvent.WaitOne(timeoutMilliseconds);
         }
 

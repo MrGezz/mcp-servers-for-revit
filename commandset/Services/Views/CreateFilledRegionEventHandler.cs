@@ -1,15 +1,15 @@
-﻿using Newtonsoft.Json.Linq;
+﻿using RevitMCPCommandSet.Utils;
+using Newtonsoft.Json.Linq;
 using RevitMCPSDK.API.Interfaces;
 
 namespace RevitMCPCommandSet.Services.Views
 {
-    public class CreateFilledRegionEventHandler : IExternalEventHandler, IWaitableExternalEventHandler
+    public class CreateFilledRegionEventHandler : WaitableEventHandlerBase, IExternalEventHandler, IWaitableExternalEventHandler
     {
         private UIApplication uiApp;
         private UIDocument uiDoc => uiApp.ActiveUIDocument;
         private Document doc => uiDoc.Document;
 
-        private readonly ManualResetEvent _resetEvent = new ManualResetEvent(false);
 
         public int ViewId { get; private set; }
         public List<List<JObject>> Boundary { get; private set; }
@@ -45,18 +45,24 @@ namespace RevitMCPCommandSet.Services.Views
                     FilledRegionType regionType = null;
                     if (!string.IsNullOrEmpty(FilledRegionTypeName))
                     {
-                        regionType = new FilteredElementCollector(doc)
-                            .OfClass(typeof(FilledRegionType))
-                            .Cast<FilledRegionType>()
-                            .FirstOrDefault(ft => ft.Name == FilledRegionTypeName);
+                        using (var collector = new FilteredElementCollector(doc))
+                        {
+                            regionType = collector
+                                .OfClass(typeof(FilledRegionType))
+                                .Cast<FilledRegionType>()
+                                .FirstOrDefault(ft => ft.Name == FilledRegionTypeName);
+                        }
                     }
 
                     if (regionType == null)
                     {
-                        regionType = new FilteredElementCollector(doc)
-                            .OfClass(typeof(FilledRegionType))
-                            .Cast<FilledRegionType>()
-                            .FirstOrDefault();
+                        using (var collector = new FilteredElementCollector(doc))
+                        {
+                            regionType = collector
+                                .OfClass(typeof(FilledRegionType))
+                                .Cast<FilledRegionType>()
+                                .FirstOrDefault();
+                        }
                     }
 
                     if (regionType == null)
@@ -116,7 +122,6 @@ namespace RevitMCPCommandSet.Services.Views
 
         public bool WaitForCompletion(int timeoutMilliseconds = 10000)
         {
-            _resetEvent.Reset();
             return _resetEvent.WaitOne(timeoutMilliseconds);
         }
 

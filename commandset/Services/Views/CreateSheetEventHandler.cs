@@ -1,15 +1,15 @@
-﻿using RevitMCPCommandSet.Models.Views;
+﻿using RevitMCPCommandSet.Utils;
+using RevitMCPCommandSet.Models.Views;
 using RevitMCPSDK.API.Interfaces;
 
 namespace RevitMCPCommandSet.Services.Views
 {
-    public class CreateSheetEventHandler : IExternalEventHandler, IWaitableExternalEventHandler
+    public class CreateSheetEventHandler : WaitableEventHandlerBase, IExternalEventHandler, IWaitableExternalEventHandler
     {
         private UIApplication uiApp;
         private UIDocument uiDoc => uiApp.ActiveUIDocument;
         private Document doc => uiDoc.Document;
 
-        private readonly ManualResetEvent _resetEvent = new ManualResetEvent(false);
 
         public List<SheetCreationInfo> CreatedInfo { get; private set; }
 
@@ -53,20 +53,24 @@ namespace RevitMCPCommandSet.Services.Views
 
                         if (titleBlockTypeId == ElementId.InvalidElementId && !string.IsNullOrEmpty(info.TitleBlockFamilyName))
                         {
-                            FamilySymbol tbSymbol = new FilteredElementCollector(doc)
-                                .OfClass(typeof(FamilySymbol))
-                                .Cast<FamilySymbol>()
-                                .FirstOrDefault(fs =>
-                                {
-                                    if (fs.FamilyName != null && info.TitleBlockFamilyName != null &&
-                                        fs.FamilyName.Equals(info.TitleBlockFamilyName, StringComparison.OrdinalIgnoreCase))
+                            FamilySymbol tbSymbol;
+                            using (var collector = new FilteredElementCollector(doc))
+                            {
+                                tbSymbol = collector
+                                    .OfClass(typeof(FamilySymbol))
+                                    .Cast<FamilySymbol>()
+                                    .FirstOrDefault(fs =>
                                     {
-                                        if (!string.IsNullOrEmpty(info.TitleBlockTypeName))
-                                            return fs.Name != null && fs.Name.Equals(info.TitleBlockTypeName, StringComparison.OrdinalIgnoreCase);
-                                        return true;
-                                    }
-                                    return false;
-                                });
+                                        if (fs.FamilyName != null && info.TitleBlockFamilyName != null &&
+                                            fs.FamilyName.Equals(info.TitleBlockFamilyName, StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            if (!string.IsNullOrEmpty(info.TitleBlockTypeName))
+                                                return fs.Name != null && fs.Name.Equals(info.TitleBlockTypeName, StringComparison.OrdinalIgnoreCase);
+                                            return true;
+                                        }
+                                        return false;
+                                    });
+                            }
 
                             if (tbSymbol != null)
                             {
@@ -80,14 +84,18 @@ namespace RevitMCPCommandSet.Services.Views
 
                         if (titleBlockTypeId == ElementId.InvalidElementId)
                         {
-                            FamilySymbol defaultTb = new FilteredElementCollector(doc)
-                                .OfClass(typeof(FamilySymbol))
-                                .Cast<FamilySymbol>()
-                                .FirstOrDefault(fs =>
-                                {
-                                    Category cat = fs.Category;
-                                    return cat != null && cat.Id.GetIntValue() == (int)BuiltInCategory.OST_TitleBlocks;
-                                });
+                            FamilySymbol defaultTb;
+                            using (var collector = new FilteredElementCollector(doc))
+                            {
+                                defaultTb = collector
+                                    .OfClass(typeof(FamilySymbol))
+                                    .Cast<FamilySymbol>()
+                                    .FirstOrDefault(fs =>
+                                    {
+                                        Category cat = fs.Category;
+                                        return cat != null && cat.Id.GetIntValue() == (int)BuiltInCategory.OST_TitleBlocks;
+                                    });
+                            }
 
                             if (defaultTb != null)
                             {
@@ -188,7 +196,6 @@ namespace RevitMCPCommandSet.Services.Views
 
         public bool WaitForCompletion(int timeoutMilliseconds = 15000)
         {
-            _resetEvent.Reset();
             return _resetEvent.WaitOne(timeoutMilliseconds);
         }
 

@@ -1,16 +1,16 @@
-﻿using RevitMCPCommandSet.Models.Annotation;
+﻿using RevitMCPCommandSet.Utils;
+using RevitMCPCommandSet.Models.Annotation;
 using RevitMCPSDK.API.Interfaces;
 
 namespace RevitMCPCommandSet.Services.Annotation
 {
-    public class CreateTagEventHandler : IExternalEventHandler, IWaitableExternalEventHandler
+    public class CreateTagEventHandler : WaitableEventHandlerBase, IExternalEventHandler, IWaitableExternalEventHandler
     {
         private UIApplication uiApp;
         private UIDocument uiDoc => uiApp.ActiveUIDocument;
         private Document doc => uiDoc.Document;
         private Autodesk.Revit.ApplicationServices.Application app => uiApp.Application;
 
-        private readonly ManualResetEvent _resetEvent = new ManualResetEvent(false);
 
         public List<TagCreationInfo> CreatedInfo { get; private set; }
 
@@ -46,6 +46,12 @@ namespace RevitMCPCommandSet.Services.Annotation
                         view = doc.ActiveView;
                     }
 
+                    if (view is View3D || view.ViewType == ViewType.ThreeD)
+                    {
+                        _warnings.Add($"Tags can only be created in a 2D view ('{view.Name}' is a 3D view).");
+                        continue;
+                    }
+
                     Element targetElement = doc.GetElement(ElementIdFactory.Create(data.ElementId));
                     if (targetElement == null)
                     {
@@ -78,23 +84,29 @@ namespace RevitMCPCommandSet.Services.Annotation
                             tagCategory = GetTagCategory(data.TagCategory);
                         }
 
-                        tagType = new FilteredElementCollector(doc)
-                            .OfClass(typeof(FamilySymbol))
-                            .WhereElementIsElementType()
-                            .Where(e => e.Category != null &&
-                                   e.Category.Id.GetIntValue() == (int)tagCategory)
-                            .Cast<FamilySymbol>()
-                            .FirstOrDefault();
-
-                        if (tagType == null && tagCategory != BuiltInCategory.OST_MultiCategoryTags)
+                        using (var tagCollector = new FilteredElementCollector(doc))
                         {
-                            tagType = new FilteredElementCollector(doc)
+                            tagType = tagCollector
                                 .OfClass(typeof(FamilySymbol))
                                 .WhereElementIsElementType()
                                 .Where(e => e.Category != null &&
-                                       e.Category.Id.GetIntValue() == (int)BuiltInCategory.OST_MultiCategoryTags)
+                                       e.Category.Id.GetIntValue() == (int)tagCategory)
                                 .Cast<FamilySymbol>()
                                 .FirstOrDefault();
+                        }
+
+                        if (tagType == null && tagCategory != BuiltInCategory.OST_MultiCategoryTags)
+                        {
+                            using (var fallbackCollector = new FilteredElementCollector(doc))
+                            {
+                                tagType = fallbackCollector
+                                    .OfClass(typeof(FamilySymbol))
+                                    .WhereElementIsElementType()
+                                    .Where(e => e.Category != null &&
+                                           e.Category.Id.GetIntValue() == (int)BuiltInCategory.OST_MultiCategoryTags)
+                                    .Cast<FamilySymbol>()
+                                    .FirstOrDefault();
+                            }
                         }
 
                         if (data.TagTypeId != -1 && data.TagTypeId != 0)
@@ -169,7 +181,6 @@ namespace RevitMCPCommandSet.Services.Annotation
 
         public bool WaitForCompletion(int timeoutMilliseconds = 15000)
         {
-            _resetEvent.Reset();
             return _resetEvent.WaitOne(timeoutMilliseconds);
         }
 

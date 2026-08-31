@@ -1,6 +1,7 @@
 ﻿using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using RevitMCPSDK.API.Interfaces;
+using RevitMCPCommandSet.Utils;
 using RevitMCPCommandSet.Models.Common;
 using System;
 using System.Collections.Generic;
@@ -10,7 +11,7 @@ using System.Threading.Tasks;
 
 namespace RevitMCPCommandSet.Services
 {
-    public class OperateElementEventHandler : IExternalEventHandler, IWaitableExternalEventHandler
+    public class OperateElementEventHandler : WaitableEventHandlerBase, IExternalEventHandler, IWaitableExternalEventHandler
     {
         private UIApplication uiApp;
         private UIDocument uiDoc => uiApp.ActiveUIDocument;
@@ -20,7 +21,6 @@ namespace RevitMCPCommandSet.Services
         /// <summary>
         /// Event wait object
         /// </summary>
-        private readonly ManualResetEvent _resetEvent = new ManualResetEvent(false);
         /// <summary>
         /// Input data (parameters to pass in)
         /// </summary>
@@ -73,7 +73,6 @@ namespace RevitMCPCommandSet.Services
         /// <returns>Whether the operation completed before the timeout</returns>
         public bool WaitForCompletion(int timeoutMilliseconds = 10000)
         {
-            _resetEvent.Reset();
             return _resetEvent.WaitOne(timeoutMilliseconds);
         }
 
@@ -132,7 +131,7 @@ namespace RevitMCPCommandSet.Services
                     else
                     {
                         // Active view is not a 3D view; find the default 3D view
-                        FilteredElementCollector collector = new FilteredElementCollector(doc);
+                        using FilteredElementCollector collector = new FilteredElementCollector(doc);
                         collector.OfClass(typeof(View3D));
 
                         // Try to find the default 3D view or any other available 3D view
@@ -341,7 +340,7 @@ namespace RevitMCPCommandSet.Services
             try
             {
                 // Try to find the default fill pattern
-                FilteredElementCollector patternCollector = new FilteredElementCollector(doc)
+                using FilteredElementCollector patternCollector = new FilteredElementCollector(doc)
                     .OfClass(typeof(FillPatternElement));
 
                 // First, look for a solid fill pattern

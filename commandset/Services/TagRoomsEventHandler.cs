@@ -1,4 +1,5 @@
-﻿using Autodesk.Revit.DB.Architecture;
+﻿using RevitMCPCommandSet.Utils;
+using Autodesk.Revit.DB.Architecture;
 using RevitMCPSDK.API.Interfaces;
 
 namespace RevitMCPCommandSet.Services
@@ -33,7 +34,7 @@ namespace RevitMCPCommandSet.Services
     /// <summary>
     /// Event handler for creating room tags in Revit
     /// </summary>
-    public class TagRoomsEventHandler : IExternalEventHandler, IWaitableExternalEventHandler
+    public class TagRoomsEventHandler : WaitableEventHandlerBase, IExternalEventHandler, IWaitableExternalEventHandler
     {
         private UIApplication _uiApp;
         private UIDocument _uiDoc => _uiApp.ActiveUIDocument;
@@ -42,7 +43,6 @@ namespace RevitMCPCommandSet.Services
         /// <summary>
         /// Event wait object for synchronization
         /// </summary>
-        private readonly ManualResetEvent _resetEvent = new ManualResetEvent(false);
 
         /// <summary>
         /// Tagging result data
@@ -87,11 +87,15 @@ namespace RevitMCPCommandSet.Services
                 else
                 {
                     // Get level from any room in the project
-                    var anyRoom = new FilteredElementCollector(_doc)
-                        .OfCategory(BuiltInCategory.OST_Rooms)
-                        .WhereElementIsNotElementType()
-                        .Cast<Room>()
-                        .FirstOrDefault(r => r.Area > 0);
+                    Room anyRoom;
+                    using (var roomCollector = new FilteredElementCollector(_doc))
+                    {
+                        anyRoom = roomCollector
+                            .OfCategory(BuiltInCategory.OST_Rooms)
+                            .WhereElementIsNotElementType()
+                            .Cast<Room>()
+                            .FirstOrDefault(r => r.Area > 0);
+                    }
 
                     if (anyRoom != null)
                     {
@@ -116,13 +120,17 @@ namespace RevitMCPCommandSet.Services
                     if (targetLevel != null)
                     {
                         // Find a floor plan view for this level
-                        var floorPlanView = new FilteredElementCollector(_doc)
-                            .OfClass(typeof(ViewPlan))
-                            .Cast<ViewPlan>()
-                            .FirstOrDefault(v => v.ViewType == ViewType.FloorPlan &&
-                                                 !v.IsTemplate &&
-                                                 v.GenLevel != null &&
-                                                 v.GenLevel.Id == targetLevel.Id);
+                        ViewPlan floorPlanView;
+                        using (var viewCollector = new FilteredElementCollector(_doc))
+                        {
+                            floorPlanView = viewCollector
+                                .OfClass(typeof(ViewPlan))
+                                .Cast<ViewPlan>()
+                                .FirstOrDefault(v => v.ViewType == ViewType.FloorPlan &&
+                                                     !v.IsTemplate &&
+                                                     v.GenLevel != null &&
+                                                     v.GenLevel.Id == targetLevel.Id);
+                        }
 
                         if (floorPlanView != null)
                         {
@@ -167,7 +175,7 @@ namespace RevitMCPCommandSet.Services
                 else
                 {
                     // Get all rooms in the current view
-                    FilteredElementCollector roomCollector = new FilteredElementCollector(_doc, activeView.Id);
+                    using FilteredElementCollector roomCollector = new FilteredElementCollector(_doc, activeView.Id);
                     rooms = roomCollector.OfCategory(BuiltInCategory.OST_Rooms)
                                          .WhereElementIsNotElementType()
                                          .ToElements();
@@ -180,7 +188,7 @@ namespace RevitMCPCommandSet.Services
 
                 // Get existing room tags in the view to avoid duplicates
                 HashSet<long> roomsWithExistingTags = new HashSet<long>();
-                FilteredElementCollector existingTagCollector = new FilteredElementCollector(_doc, activeView.Id);
+                using FilteredElementCollector existingTagCollector = new FilteredElementCollector(_doc, activeView.Id);
                 var existingRoomTags = existingTagCollector.OfCategory(BuiltInCategory.OST_RoomTags)
                                                           .WhereElementIsNotElementType()
                                                           .Cast<RoomTag>()
@@ -351,7 +359,6 @@ namespace RevitMCPCommandSet.Services
         /// <returns>True if completed before timeout</returns>
         public bool WaitForCompletion(int timeoutMilliseconds = 10000)
         {
-            _resetEvent.Reset();
         return _resetEvent.WaitOne(timeoutMilliseconds);
         }
 
@@ -383,7 +390,7 @@ namespace RevitMCPCommandSet.Services
             }
 
             // Find the first available room tag type
-            FilteredElementCollector tagCollector = new FilteredElementCollector(doc);
+            using FilteredElementCollector tagCollector = new FilteredElementCollector(doc);
             FamilySymbol roomTagType = tagCollector.OfClass(typeof(FamilySymbol))
                                                   .WhereElementIsElementType()
                                                   .Where(e => e.Category != null &&

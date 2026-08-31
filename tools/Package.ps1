@@ -213,6 +213,24 @@ if (-not $SkipBuild) {
         throw "npm was not found on PATH. It is needed to build and stage the MCP server. Use -SkipBuild to package the add-in alone."
     }
     Push-Location $serverSrc
+
+    # WHY $ErrorActionPreference IS LOWERED AROUND THESE FOUR CALLS.
+    #
+    # This script runs with 'Stop'. Under 'Stop', `& native.exe 2>&1` turns every
+    # line the program writes to STDERR into a terminating NativeCommandError -
+    # so a single npm WARNING aborts the whole package.
+    #
+    # Measured on 2026-08-31: all eight Revit versions built, then packaging died
+    # on npm's deprecation notice for a transitive `glob@10.5.0`. Nothing was
+    # wrong with the build; npm had merely written a warning, and this script
+    # treated it as a failure. That is precisely backwards for a packaging tool -
+    # npm writes progress and advisories to stderr as a matter of course.
+    #
+    # The exit-code checks below are the real gate and were always correct; they
+    # just never got the chance to run. So stderr goes back to being output, and
+    # $LASTEXITCODE decides.
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
     try {
         # --omit=dev so typescript and the type packages do not ship.
         & npm install --omit=dev --no-audit --no-fund 2>&1 | Out-Null
@@ -226,7 +244,10 @@ if (-not $SkipBuild) {
         & npm prune --omit=dev 2>&1 | Out-Null
         if ($LASTEXITCODE -ne 0) { throw "npm prune failed (exit $LASTEXITCODE)." }
     }
-    finally { Pop-Location }
+    finally {
+        $ErrorActionPreference = $prevEap
+        Pop-Location
+    }
 }
 
 $entry = Join-Path $serverSrc 'build\index.js'
@@ -261,6 +282,38 @@ Copy-Item $targetScript (Join-Path $stage 'tools') -Force
 $serverFiles = @(Get-ChildItem $serverOut -Recurse -File)
 $serverMb = [math]::Round((($serverFiles | Measure-Object Length -Sum).Sum) / 1MB, 1)
 Ok "MCP server  -  $($serverFiles.Count) files, $serverMb MB, 0 native modules"
+
+# RESTORE THE WORKING TREE. The prune above is correct for the PAYLOAD - shipping
+# devDependencies would be wrong - but it is destructive to the REPOSITORY, and
+# the payload has now been copied, so the pruned state has done its job.
+#
+# Measured 2026-08-31: running Package.ps1 and then Verify.ps1 produced
+# 'FAIL tsc compiles clean' with 'Cannot find global type Boolean' and
+# 'lib.es2022.full.d.ts not found'. Nothing was wrong with the TypeScript -
+# typescript is a devDependency and Package.ps1 had deleted it, so the next gate
+# to run was measuring a tree this script had emptied. A packaging step that
+# leaves the next gate reporting a false failure is a defect in the packaging
+# step, not a flaky gate.
+if (-not $SkipBuild) {
+    Step 'Restoring the development tree (prune was for the payload only)'
+    Push-Location $serverSrc
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        & npm install --no-audit --no-fund 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            # Not fatal: the payload is already staged and correct. Say so loudly
+            # rather than failing a package that actually succeeded.
+            Note "npm install did not restore devDependencies (exit $LASTEXITCODE) - run it in server\ before the next Verify."
+        } else {
+            Ok "devDependencies restored"
+        }
+    }
+    finally {
+        $ErrorActionPreference = $prevEap
+        Pop-Location
+    }
+}
 # -------------------------------------------------------------------- read me
 $readme = @"
 mcp-servers-for-revit $Version

@@ -1,16 +1,16 @@
 ﻿using RevitMCPCommandSet.Localization;
+using RevitMCPCommandSet.Utils;
 using RevitMCPCommandSet.Models.Views;
 using RevitMCPSDK.API.Interfaces;
 
 namespace RevitMCPCommandSet.Services.Views
 {
-    public class CreateViewEventHandler : IExternalEventHandler, IWaitableExternalEventHandler
+    public class CreateViewEventHandler : WaitableEventHandlerBase, IExternalEventHandler, IWaitableExternalEventHandler
     {
         private UIApplication uiApp;
         private UIDocument uiDoc => uiApp.ActiveUIDocument;
         private Document doc => uiDoc.Document;
 
-        private readonly ManualResetEvent _resetEvent = new ManualResetEvent(false);
 
         public List<ViewCreationInfo> CreatedInfo { get; private set; }
 
@@ -74,9 +74,17 @@ namespace RevitMCPCommandSet.Services.Views
                                 view.Name = info.Name;
                             }
 
-                            if (info.Scale > 0 && view.CanViewBeDuplicated(ViewDuplicateOption.Duplicate))
+                            if (info.Scale > 0)
                             {
-                                view.get_Parameter(BuiltInParameter.VIEW_SCALE)?.Set(info.Scale);
+                                try
+                                {
+                                    view.Scale = info.Scale;
+                                }
+                                catch (Autodesk.Revit.Exceptions.InvalidOperationException)
+                                {
+                                    // Scale is not settable for this view type; log as warning.
+                                    _warnings.Add($"View scale could not be set for view type '{info.ViewType}'.");
+                                }
                             }
 
                             if (!string.IsNullOrEmpty(info.DetailLevel))
@@ -151,10 +159,14 @@ namespace RevitMCPCommandSet.Services.Views
         private View Create3DView(ViewCreationInfo info)
         {
             View3D view3D = null;
-            ViewFamilyType vft = new FilteredElementCollector(doc)
-                .OfClass(typeof(ViewFamilyType))
-                .Cast<ViewFamilyType>()
-                .FirstOrDefault(vftype => vftype.ViewFamily == ViewFamily.ThreeDimensional);
+            ViewFamilyType vft;
+            using (var collector = new FilteredElementCollector(doc))
+            {
+                vft = collector
+                    .OfClass(typeof(ViewFamilyType))
+                    .Cast<ViewFamilyType>()
+                    .FirstOrDefault(vftype => vftype.ViewFamily == ViewFamily.ThreeDimensional);
+            }
 
             if (vft != null)
             {
@@ -170,10 +182,13 @@ namespace RevitMCPCommandSet.Services.Views
             if (level == null)
             {
                 _warnings.Add($"No level found near elevation {info.LevelElevation}mm. Using first available level.");
-                level = new FilteredElementCollector(doc)
-                    .OfClass(typeof(Level))
-                    .Cast<Level>()
-                    .FirstOrDefault();
+                using (var collector = new FilteredElementCollector(doc))
+                {
+                    level = collector
+                        .OfClass(typeof(Level))
+                        .Cast<Level>()
+                        .FirstOrDefault();
+                }
             }
 
             if (level == null)
@@ -182,10 +197,14 @@ namespace RevitMCPCommandSet.Services.Views
                 return null;
             }
 
-            ViewFamilyType vft = new FilteredElementCollector(doc)
-                .OfClass(typeof(ViewFamilyType))
-                .Cast<ViewFamilyType>()
-                .FirstOrDefault(vftype => vftype.ViewFamily == viewFamily);
+            ViewFamilyType vft;
+            using (var collector = new FilteredElementCollector(doc))
+            {
+                vft = collector
+                    .OfClass(typeof(ViewFamilyType))
+                    .Cast<ViewFamilyType>()
+                    .FirstOrDefault(vftype => vftype.ViewFamily == viewFamily);
+            }
 
             if (vft == null)
             {
@@ -212,18 +231,25 @@ namespace RevitMCPCommandSet.Services.Views
             Level level = FindLevel(info.LevelElevation);
             if (level == null)
             {
-                level = new FilteredElementCollector(doc)
-                    .OfClass(typeof(Level))
-                    .Cast<Level>()
-                    .FirstOrDefault();
+                using (var collector = new FilteredElementCollector(doc))
+                {
+                    level = collector
+                        .OfClass(typeof(Level))
+                        .Cast<Level>()
+                        .FirstOrDefault();
+                }
             }
 
             if (level == null) return null;
 
-            ViewFamilyType vft = new FilteredElementCollector(doc)
-                .OfClass(typeof(ViewFamilyType))
-                .Cast<ViewFamilyType>()
-                .FirstOrDefault(vftype => vftype.ViewFamily == ViewFamily.Elevation);
+            ViewFamilyType vft;
+            using (var collector = new FilteredElementCollector(doc))
+            {
+                vft = collector
+                    .OfClass(typeof(ViewFamilyType))
+                    .Cast<ViewFamilyType>()
+                    .FirstOrDefault(vftype => vftype.ViewFamily == ViewFamily.Elevation);
+            }
 
             if (vft == null) return null;
 
@@ -263,18 +289,25 @@ namespace RevitMCPCommandSet.Services.Views
             Level level = FindLevel(info.LevelElevation);
             if (level == null)
             {
-                level = new FilteredElementCollector(doc)
-                    .OfClass(typeof(Level))
-                    .Cast<Level>()
-                    .FirstOrDefault();
+                using (var collector = new FilteredElementCollector(doc))
+                {
+                    level = collector
+                        .OfClass(typeof(Level))
+                        .Cast<Level>()
+                        .FirstOrDefault();
+                }
             }
 
             if (level == null) return null;
 
-            ViewFamilyType vft = new FilteredElementCollector(doc)
-                .OfClass(typeof(ViewFamilyType))
-                .Cast<ViewFamilyType>()
-                .FirstOrDefault(vftype => vftype.ViewFamily == ViewFamily.Section);
+            ViewFamilyType vft;
+            using (var collector = new FilteredElementCollector(doc))
+            {
+                vft = collector
+                    .OfClass(typeof(ViewFamilyType))
+                    .Cast<ViewFamilyType>()
+                    .FirstOrDefault(vftype => vftype.ViewFamily == ViewFamily.Section);
+            }
 
             if (vft == null) return null;
 
@@ -314,11 +347,14 @@ namespace RevitMCPCommandSet.Services.Views
 
             double elevationFt = elevationMm / 304.8;
 
-            return new FilteredElementCollector(doc)
-                .OfClass(typeof(Level))
-                .Cast<Level>()
-                .OrderBy(l => Math.Abs(l.Elevation - elevationFt))
-                .FirstOrDefault();
+            using (var collector = new FilteredElementCollector(doc))
+            {
+                return collector
+                    .OfClass(typeof(Level))
+                    .Cast<Level>()
+                    .OrderBy(l => Math.Abs(l.Elevation - elevationFt))
+                    .FirstOrDefault();
+            }
         }
 
         private void SetParameterValue(Parameter param, object value)
@@ -344,7 +380,6 @@ namespace RevitMCPCommandSet.Services.Views
 
         public bool WaitForCompletion(int timeoutMilliseconds = 15000)
         {
-            _resetEvent.Reset();
             return _resetEvent.WaitOne(timeoutMilliseconds);
         }
 

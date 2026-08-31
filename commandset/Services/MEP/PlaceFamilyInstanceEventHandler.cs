@@ -1,16 +1,16 @@
-﻿using RevitMCPCommandSet.Models.MEP;
+﻿using RevitMCPCommandSet.Utils;
+using RevitMCPCommandSet.Models.MEP;
 using RevitMCPSDK.API.Interfaces;
 
 namespace RevitMCPCommandSet.Services.MEP
 {
-  public class PlaceFamilyInstanceEventHandler : IExternalEventHandler, IWaitableExternalEventHandler
+  public class PlaceFamilyInstanceEventHandler : WaitableEventHandlerBase, IExternalEventHandler, IWaitableExternalEventHandler
   {
     private UIApplication uiApp;
     private UIDocument uiDoc => uiApp.ActiveUIDocument;
     private Document doc => uiDoc.Document;
     private Autodesk.Revit.ApplicationServices.Application app => uiApp.Application;
 
-    private readonly ManualResetEvent _resetEvent = new ManualResetEvent(false);
 
     public List<FamilyInstancePlacementInfo> PlacementInfo { get; private set; }
 
@@ -186,7 +186,6 @@ namespace RevitMCPCommandSet.Services.MEP
 
     public bool WaitForCompletion(int timeoutMilliseconds = 15000)
     {
-      _resetEvent.Reset();
       return _resetEvent.WaitOne(timeoutMilliseconds);
     }
 

@@ -1,12 +1,12 @@
-﻿using RevitMCPSDK.API.Interfaces;
+﻿using RevitMCPCommandSet.Utils;
+using RevitMCPSDK.API.Interfaces;
 
 namespace RevitMCPCommandSet.Services.Modify
 {
-    public class SetParametersEventHandler : IExternalEventHandler, IWaitableExternalEventHandler
+    public class SetParametersEventHandler : WaitableEventHandlerBase, IExternalEventHandler, IWaitableExternalEventHandler
     {
         private UIApplication uiApp;
         private Document Doc => uiApp.ActiveUIDocument.Document;
-        private readonly ManualResetEvent _resetEvent = new(false);
         public int ElementId { get; private set; }
         public JObject ParameterValues { get; private set; }
         public AIResult<bool> Result { get; private set; }
@@ -85,7 +85,6 @@ namespace RevitMCPCommandSet.Services.Modify
 
         public bool WaitForCompletion(int timeout = 10000)
         {
-            _resetEvent.Reset();
             return _resetEvent.WaitOne(timeout);
         }
 

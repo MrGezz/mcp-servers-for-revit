@@ -1,10 +1,11 @@
 ﻿using Newtonsoft.Json.Linq;
+using RevitMCPCommandSet.Utils;
 using RevitMCPCommandSet.Localization;
 using RevitMCPSDK.API.Interfaces;
 
 namespace RevitMCPCommandSet.Services
 {
-    public class ColorSplashEventHandler : IExternalEventHandler, IWaitableExternalEventHandler
+    public class ColorSplashEventHandler : WaitableEventHandlerBase, IExternalEventHandler, IWaitableExternalEventHandler
     {
         private UIApplication uiApp;
         private UIDocument uiDoc => uiApp.ActiveUIDocument;
@@ -13,7 +14,6 @@ namespace RevitMCPCommandSet.Services
         /// <summary>
         /// Event wait object
         /// </summary>
-        private readonly ManualResetEvent _resetEvent = new ManualResetEvent(false);
 
         /// <summary>
         /// Results data
@@ -78,7 +78,7 @@ namespace RevitMCPCommandSet.Services
                 }
 
                 // Get elements of the category in the current view
-                FilteredElementCollector collector = new FilteredElementCollector(doc, activeView.Id)
+                using FilteredElementCollector collector = new FilteredElementCollector(doc, activeView.Id)
                     .OfCategoryId(category.Id)
                     .WhereElementIsNotElementType()
                     .WhereElementIsViewIndependent();
@@ -232,7 +232,6 @@ namespace RevitMCPCommandSet.Services
         /// <returns>Whether operation completed within timeout</returns>
         public bool WaitForCompletion(int timeoutMilliseconds = 10000)
         {
-            _resetEvent.Reset();
         return _resetEvent.WaitOne(timeoutMilliseconds);
         }
 
@@ -439,7 +438,7 @@ namespace RevitMCPCommandSet.Services
         /// </summary>
         private ElementId GetSolidFillPatternId()
         {
-            FilteredElementCollector collector = new FilteredElementCollector(doc);
+            using FilteredElementCollector collector = new FilteredElementCollector(doc);
             collector.OfClass(typeof(FillPatternElement));
 
             foreach (FillPatternElement patternElement in collector)

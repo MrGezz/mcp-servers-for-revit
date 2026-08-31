@@ -1,14 +1,14 @@
-﻿using RevitMCPSDK.API.Interfaces;
+﻿using RevitMCPCommandSet.Utils;
+using RevitMCPSDK.API.Interfaces;
 
 namespace RevitMCPCommandSet.Services.Views
 {
-    public class CreateCalloutEventHandler : IExternalEventHandler, IWaitableExternalEventHandler
+    public class CreateCalloutEventHandler : WaitableEventHandlerBase, IExternalEventHandler, IWaitableExternalEventHandler
     {
         private UIApplication uiApp;
         private UIDocument uiDoc => uiApp.ActiveUIDocument;
         private Document doc => uiDoc.Document;
 
-        private readonly ManualResetEvent _resetEvent = new ManualResetEvent(false);
 
         public string ViewName { get; private set; }
         public int HostViewId { get; private set; }
@@ -47,10 +47,14 @@ namespace RevitMCPCommandSet.Services.Views
                         return;
                     }
 
-                    ViewFamilyType vft = new FilteredElementCollector(doc)
-                        .OfClass(typeof(ViewFamilyType))
-                        .Cast<ViewFamilyType>()
-                        .FirstOrDefault(vftype => vftype.ViewFamily == ViewFamily.Section);
+                    ViewFamilyType vft;
+                    using (var collector = new FilteredElementCollector(doc))
+                    {
+                        vft = collector
+                            .OfClass(typeof(ViewFamilyType))
+                            .Cast<ViewFamilyType>()
+                            .FirstOrDefault(vftype => vftype.ViewFamily == ViewFamily.Section);
+                    }
 
                     if (vft == null)
                     {
@@ -104,7 +108,6 @@ namespace RevitMCPCommandSet.Services.Views
 
         public bool WaitForCompletion(int timeoutMilliseconds = 10000)
         {
-            _resetEvent.Reset();
             return _resetEvent.WaitOne(timeoutMilliseconds);
         }
 

@@ -1,16 +1,16 @@
-﻿using RevitMCPCommandSet.Models.Views;
+﻿using RevitMCPCommandSet.Utils;
+using RevitMCPCommandSet.Models.Views;
 using RevitMCPSDK.API.Interfaces;
 
 namespace RevitMCPCommandSet.Services.Views
 {
-  public class ExportViewsEventHandler : IExternalEventHandler, IWaitableExternalEventHandler
+  public class ExportViewsEventHandler : WaitableEventHandlerBase, IExternalEventHandler, IWaitableExternalEventHandler
   {
     private UIApplication uiApp;
     private UIDocument uiDoc => uiApp.ActiveUIDocument;
     private Document doc => uiDoc.Document;
     private Autodesk.Revit.ApplicationServices.Application app => uiApp.Application;
 
-    private readonly ManualResetEvent _resetEvent = new ManualResetEvent(false);
 
     public List<ExportSettingsInfo> ExportInfo { get; private set; }
 
@@ -167,7 +167,6 @@ namespace RevitMCPCommandSet.Services.Views
 
     public bool WaitForCompletion(int timeoutMilliseconds = 60000)
     {
-      _resetEvent.Reset();
       return _resetEvent.WaitOne(timeoutMilliseconds);
     }
 

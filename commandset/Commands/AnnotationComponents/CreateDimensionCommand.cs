@@ -34,6 +34,14 @@ namespace RevitMCPCommandSet.Commands.AnnotationComponents;
 /// </summary>
 public class CreateDimensionCommand : ExternalEventCommandBase
 {
+    // Instance-level, not static: ExternalEvent.Raise() already serialises
+    // EXECUTION on the Revit UI thread, so a static lock would serialise
+    // unrelated commands against each other for no benefit. What is
+    // unprotected is this command's SHARED HANDLER INSTANCE - the registry
+    // keeps one per command name - between SetParameters() and the handler
+    // reading those parameters on the UI thread.
+    private readonly object _executionLock = new object();
+
     /// <summary>
     ///     Constructor
     /// </summary>
@@ -58,25 +66,28 @@ public class CreateDimensionCommand : ExternalEventCommandBase
     /// <returns>Execution result</returns>
     public override object Execute(JObject parameters, string requestId)
     {
-        try
+        lock (_executionLock)
         {
-            // Parse parameters
-            var dimensions = parameters["dimensions"]?.ToObject<List<DimensionCreationInfo>>();
+            try
+            {
+                // Parse parameters
+                var dimensions = parameters["dimensions"]?.ToObject<List<DimensionCreationInfo>>();
 
-            if (dimensions == null || dimensions.Count == 0)
-                throw new ArgumentException("Dimension list cannot be empty");
+                if (dimensions == null || dimensions.Count == 0)
+                    throw new ArgumentException("Dimension list cannot be empty");
 
-            // Set parameters and execute
-            _handler.SetParameters(dimensions);
+                // Set parameters and execute
+                _handler.SetParameters(dimensions);
 
-            // Raise event and wait for completion
-            if (RaiseAndWaitForCompletion(20000)) // 20 seconds timeout
-                return _handler.Result;
-            throw new TimeoutException("Dimension creation operation timed out");
-        }
-        catch (Exception ex)
-        {
-            throw new Exception($"Error creating dimensions: {ex.Message}", ex);
-        }
+                // Raise event and wait for completion
+                if (RaiseAndWaitForCompletion(20000)) // 20 seconds timeout
+                    return _handler.Result;
+                throw new TimeoutException("Dimension creation operation timed out");
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Error creating dimensions: {ex.Message}", ex);
+            }
+            }
     }
 }

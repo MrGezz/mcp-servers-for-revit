@@ -1,16 +1,16 @@
+using RevitMCPCommandSet.Utils;
 using RevitMCPCommandSet.Models.MEP;
 using RevitMCPSDK.API.Interfaces;
 
 namespace RevitMCPCommandSet.Services.MEP
 {
-  public class CreateDirectShapeEventHandler : IExternalEventHandler, IWaitableExternalEventHandler
+  public class CreateDirectShapeEventHandler : WaitableEventHandlerBase, IExternalEventHandler, IWaitableExternalEventHandler
   {
     private UIApplication uiApp;
     private UIDocument uiDoc => uiApp.ActiveUIDocument;
     private Document doc => uiDoc.Document;
     private Autodesk.Revit.ApplicationServices.Application app => uiApp.Application;
 
-    private readonly ManualResetEvent _resetEvent = new ManualResetEvent(false);
 
     public List<DirectShapeCreationInfo> CreatedInfo { get; private set; }
 
@@ -127,7 +127,7 @@ namespace RevitMCPCommandSet.Services.MEP
 
               if (!string.IsNullOrEmpty(data.Material))
               {
-                FilteredElementCollector matCollector = new FilteredElementCollector(doc)
+                using FilteredElementCollector matCollector = new FilteredElementCollector(doc)
                     .OfClass(typeof(Material));
                 foreach (Material mat in matCollector)
                 {
@@ -177,7 +177,6 @@ namespace RevitMCPCommandSet.Services.MEP
 
     public bool WaitForCompletion(int timeoutMilliseconds = 30000)
     {
-      _resetEvent.Reset();
       return _resetEvent.WaitOne(timeoutMilliseconds);
     }
 

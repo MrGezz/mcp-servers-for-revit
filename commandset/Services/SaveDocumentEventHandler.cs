@@ -1,17 +1,17 @@
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
+using RevitMCPCommandSet.Utils;
 using RevitMCPCommandSet.Models.Common;
 using RevitMCPSDK.API.Interfaces;
 
 namespace RevitMCPCommandSet.Services
 {
-    public class SaveDocumentEventHandler : IExternalEventHandler, IWaitableExternalEventHandler
+    public class SaveDocumentEventHandler : WaitableEventHandlerBase, IExternalEventHandler, IWaitableExternalEventHandler
     {
         private UIApplication uiApp;
         private UIDocument uiDoc => uiApp.ActiveUIDocument;
         private Document doc => uiDoc.Document;
 
-        private readonly ManualResetEvent _resetEvent = new ManualResetEvent(false);
 
         public AIResult<bool> Result { get; private set; }
 
@@ -52,7 +52,6 @@ namespace RevitMCPCommandSet.Services
 
         public bool WaitForCompletion(int timeoutMilliseconds = 30000)
         {
-            _resetEvent.Reset();
             return _resetEvent.WaitOne(timeoutMilliseconds);
         }
 

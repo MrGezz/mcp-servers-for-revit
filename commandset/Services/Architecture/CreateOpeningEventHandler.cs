@@ -1,15 +1,15 @@
-﻿using RevitMCPCommandSet.Models.Architecture;
+﻿using RevitMCPCommandSet.Utils;
+using RevitMCPCommandSet.Models.Architecture;
 using RevitMCPSDK.API.Interfaces;
 
 namespace RevitMCPCommandSet.Services.Architecture
 {
-    public class CreateOpeningEventHandler : IExternalEventHandler, IWaitableExternalEventHandler
+    public class CreateOpeningEventHandler : WaitableEventHandlerBase, IExternalEventHandler, IWaitableExternalEventHandler
     {
         private UIApplication _uiApp;
         private UIDocument _uiDoc => _uiApp.ActiveUIDocument;
         private Document _doc => _uiDoc.Document;
 
-        private readonly ManualResetEvent _resetEvent = new ManualResetEvent(false);
 
         public List<OpeningCreationInfo> OpeningData { get; private set; }
 
@@ -153,7 +153,6 @@ namespace RevitMCPCommandSet.Services.Architecture
 
         public bool WaitForCompletion(int timeoutMilliseconds = 10000)
         {
-            _resetEvent.Reset();
             return _resetEvent.WaitOne(timeoutMilliseconds);
         }
 

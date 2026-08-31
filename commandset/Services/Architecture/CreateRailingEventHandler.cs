@@ -1,16 +1,16 @@
 ﻿using Autodesk.Revit.DB.Architecture;
+using RevitMCPCommandSet.Utils;
 using RevitMCPCommandSet.Models.Architecture;
 using RevitMCPSDK.API.Interfaces;
 
 namespace RevitMCPCommandSet.Services.Architecture
 {
-    public class CreateRailingEventHandler : IExternalEventHandler, IWaitableExternalEventHandler
+    public class CreateRailingEventHandler : WaitableEventHandlerBase, IExternalEventHandler, IWaitableExternalEventHandler
     {
         private UIApplication _uiApp;
         private UIDocument _uiDoc => _uiApp.ActiveUIDocument;
         private Document _doc => _uiDoc.Document;
 
-        private readonly ManualResetEvent _resetEvent = new ManualResetEvent(false);
 
         public List<RailingCreationInfo> RailingData { get; private set; }
 
@@ -46,10 +46,13 @@ namespace RevitMCPCommandSet.Services.Architecture
 
                     if (railingType == null && !string.IsNullOrEmpty(info.RailingType))
                     {
-                        railingType = new FilteredElementCollector(_doc)
-                            .OfClass(typeof(RailingType))
-                            .Cast<RailingType>()
-                            .FirstOrDefault(rt => rt.Name.Equals(info.RailingType, StringComparison.OrdinalIgnoreCase));
+                        using (var fec = new FilteredElementCollector(_doc))
+                        {
+                            railingType = fec
+                                .OfClass(typeof(RailingType))
+                                .Cast<RailingType>()
+                                .FirstOrDefault(rt => rt.Name.Equals(info.RailingType, StringComparison.OrdinalIgnoreCase));
+                        }
                         if (railingType == null)
                         {
                             _warnings.Add($"Railing type '{info.RailingType}' not found, using first available");
@@ -58,10 +61,13 @@ namespace RevitMCPCommandSet.Services.Architecture
 
                     if (railingType == null)
                     {
-                        railingType = new FilteredElementCollector(_doc)
-                            .OfClass(typeof(RailingType))
-                            .Cast<RailingType>()
-                            .FirstOrDefault();
+                        using (var fec = new FilteredElementCollector(_doc))
+                        {
+                            railingType = fec
+                                .OfClass(typeof(RailingType))
+                                .Cast<RailingType>()
+                                .FirstOrDefault();
+                        }
                     }
 
                     if (railingType == null) continue;
@@ -150,10 +156,14 @@ namespace RevitMCPCommandSet.Services.Architecture
 
         private Level FindNearestLevel(double elevationInFeet)
         {
-            var levels = new FilteredElementCollector(_doc)
-                .OfClass(typeof(Level))
-                .Cast<Level>()
-                .ToList();
+            List<Level> levels;
+            using (var fec = new FilteredElementCollector(_doc))
+            {
+                levels = fec
+                    .OfClass(typeof(Level))
+                    .Cast<Level>()
+                    .ToList();
+            }
 
             Level nearestLevel = null;
             double minDistance = double.MaxValue;
@@ -173,7 +183,6 @@ namespace RevitMCPCommandSet.Services.Architecture
 
         public bool WaitForCompletion(int timeoutMilliseconds = 10000)
         {
-            _resetEvent.Reset();
             return _resetEvent.WaitOne(timeoutMilliseconds);
         }
 

@@ -7,7 +7,7 @@ namespace RevitMCPCommandSet.Commands.Test
 {
     public class SayHelloCommand : ExternalEventCommandBase
     {
-        private static readonly object _executionLock = new object();
+        private readonly object _executionLock = new object();
         private SayHelloEventHandler _handler => (SayHelloEventHandler)Handler;
 
         public override string CommandName => "say_hello";

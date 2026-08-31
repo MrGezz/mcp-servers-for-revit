@@ -9,7 +9,7 @@ export function registerCreateOpeningTool(server: McpServer) {
     {
       data: z.array(z.object({
         hostElementId: z.number().describe("Host element ID"),
-        openingType: z.string().optional().describe("Opening type: Wall, Floor, Roof, or Shaft"),
+        openingType: z.string().optional().describe("Opening type: Wall, Floor, Roof, or Shaft. (The C# enum members are named WallOpening/FloorOpening/RoofOpening/ShaftOpening, but each carries [EnumMember(Value = \"Wall\")] and the enum is serialised with StringEnumConverter, so these short names are the canonical wire values.)"),
         location: z.object({ x: z.number(), y: z.number(), z: z.number() }).describe("Opening location in mm"),
         width: z.number().describe("Opening width in mm"),
         height: z.number().describe("Opening height in mm"),

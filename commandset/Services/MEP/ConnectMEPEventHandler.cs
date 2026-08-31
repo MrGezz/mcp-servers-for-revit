@@ -1,16 +1,16 @@
-﻿using RevitMCPCommandSet.Models.MEP;
+﻿using RevitMCPCommandSet.Utils;
+using RevitMCPCommandSet.Models.MEP;
 using RevitMCPSDK.API.Interfaces;
 
 namespace RevitMCPCommandSet.Services.MEP
 {
-  public class ConnectMEPEventHandler : IExternalEventHandler, IWaitableExternalEventHandler
+  public class ConnectMEPEventHandler : WaitableEventHandlerBase, IExternalEventHandler, IWaitableExternalEventHandler
   {
     private UIApplication uiApp;
     private UIDocument uiDoc => uiApp.ActiveUIDocument;
     private Document doc => uiDoc.Document;
     private Autodesk.Revit.ApplicationServices.Application app => uiApp.Application;
 
-    private readonly ManualResetEvent _resetEvent = new ManualResetEvent(false);
 
     public List<MEPConnectInfo> ConnectInfo { get; private set; }
 
@@ -101,6 +101,14 @@ namespace RevitMCPCommandSet.Services.MEP
 
             if (conn1 != null && conn2 != null)
             {
+              if (conn1.Domain != conn2.Domain)
+              {
+                _warnings.Add($"Skipping {data.ElementId1} -> {data.ElementId2}: elements must be in the same MEP domain " +
+                  $"({conn1.Domain} on element {data.ElementId1}, {conn2.Domain} on element {data.ElementId2})");
+                transaction.Commit();
+                continue;
+              }
+
               switch (data.ConnectType.ToLower())
               {
                 case "direct":
@@ -176,7 +184,6 @@ namespace RevitMCPCommandSet.Services.MEP
 
     public bool WaitForCompletion(int timeoutMilliseconds = 15000)
     {
-      _resetEvent.Reset();
       return _resetEvent.WaitOne(timeoutMilliseconds);
     }
 

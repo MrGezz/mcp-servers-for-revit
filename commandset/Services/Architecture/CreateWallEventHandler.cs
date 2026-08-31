@@ -1,15 +1,15 @@
-﻿using RevitMCPCommandSet.Models.Architecture;
+﻿using RevitMCPCommandSet.Utils;
+using RevitMCPCommandSet.Models.Architecture;
 using RevitMCPSDK.API.Interfaces;
 
 namespace RevitMCPCommandSet.Services.Architecture
 {
-    public class CreateWallEventHandler : IExternalEventHandler, IWaitableExternalEventHandler
+    public class CreateWallEventHandler : WaitableEventHandlerBase, IExternalEventHandler, IWaitableExternalEventHandler
     {
         private UIApplication _uiApp;
         private UIDocument _uiDoc => _uiApp.ActiveUIDocument;
         private Document _doc => _uiDoc.Document;
 
-        private readonly ManualResetEvent _resetEvent = new ManualResetEvent(false);
 
         public List<WallCreationInfo> WallData { get; private set; }
 
@@ -49,10 +49,13 @@ namespace RevitMCPCommandSet.Services.Architecture
 
                     if (wallType == null && !string.IsNullOrEmpty(info.WallType))
                     {
-                        wallType = new FilteredElementCollector(_doc)
-                            .OfClass(typeof(WallType))
-                            .Cast<WallType>()
-                            .FirstOrDefault(wt => wt.Name.Equals(info.WallType, StringComparison.OrdinalIgnoreCase));
+                        using (var fec = new FilteredElementCollector(_doc))
+                        {
+                            wallType = fec
+                                .OfClass(typeof(WallType))
+                                .Cast<WallType>()
+                                .FirstOrDefault(wt => wt.Name.Equals(info.WallType, StringComparison.OrdinalIgnoreCase));
+                        }
                         if (wallType == null)
                         {
                             _warnings.Add($"Wall type '{info.WallType}' not found, using first available");
@@ -61,10 +64,13 @@ namespace RevitMCPCommandSet.Services.Architecture
 
                     if (wallType == null)
                     {
-                        wallType = new FilteredElementCollector(_doc)
-                            .OfClass(typeof(WallType))
-                            .Cast<WallType>()
-                            .FirstOrDefault();
+                        using (var fec = new FilteredElementCollector(_doc))
+                        {
+                            wallType = fec
+                                .OfClass(typeof(WallType))
+                                .Cast<WallType>()
+                                .FirstOrDefault();
+                        }
                     }
 
                     if (wallType == null) continue;
@@ -77,7 +83,17 @@ namespace RevitMCPCommandSet.Services.Architecture
                         {
                             XYZ start = JZPoint.ToXYZ(info.StartPoint);
                             XYZ end = JZPoint.ToXYZ(info.EndPoint);
-                            Line curve = Line.CreateBound(start, end);
+
+                            Curve curve;
+                            if (info.MidPoint != null)
+                            {
+                                XYZ mid = JZPoint.ToXYZ(info.MidPoint);
+                                curve = Arc.Create(start, end, mid);
+                            }
+                            else
+                            {
+                                curve = Line.CreateBound(start, end);
+                            }
 
                             double height = info.Height / 304.8;
 
@@ -85,6 +101,25 @@ namespace RevitMCPCommandSet.Services.Architecture
 
                             if (wall != null)
                             {
+                                // Apply top constraint when requested
+                                if (info.TopConstraintType == 1 && info.TopLevelId > 0)
+                                {
+                                    // "Up to level" — set the top constraint to the specified level
+                                    Parameter heightTypeParam = wall.get_Parameter(BuiltInParameter.WALL_HEIGHT_TYPE);
+                                    if (heightTypeParam != null && !heightTypeParam.IsReadOnly)
+                                    {
+                                        heightTypeParam.Set(ElementIdFactory.Create(info.TopLevelId));
+                                    }
+                                    if (info.TopOffset != 0)
+                                    {
+                                        Parameter topOffsetParam = wall.get_Parameter(BuiltInParameter.WALL_TOP_OFFSET);
+                                        if (topOffsetParam != null && !topOffsetParam.IsReadOnly)
+                                        {
+                                            topOffsetParam.Set(info.TopOffset / 304.8);
+                                        }
+                                    }
+                                }
+
                                 elementIds.Add(wall.Id.GetIntValue());
                             }
 
@@ -127,10 +162,14 @@ namespace RevitMCPCommandSet.Services.Architecture
 
         private Level FindNearestLevel(double elevationInFeet)
         {
-            var levels = new FilteredElementCollector(_doc)
-                .OfClass(typeof(Level))
-                .Cast<Level>()
-                .ToList();
+            List<Level> levels;
+            using (var fec = new FilteredElementCollector(_doc))
+            {
+                levels = fec
+                    .OfClass(typeof(Level))
+                    .Cast<Level>()
+                    .ToList();
+            }
 
             Level nearestLevel = null;
             double minDistance = double.MaxValue;
@@ -150,7 +189,6 @@ namespace RevitMCPCommandSet.Services.Architecture
 
         public bool WaitForCompletion(int timeoutMilliseconds = 10000)
         {
-            _resetEvent.Reset();
             return _resetEvent.WaitOne(timeoutMilliseconds);
         }
 

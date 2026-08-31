@@ -1,17 +1,17 @@
 ﻿using Autodesk.Revit.DB.Electrical;
+using RevitMCPCommandSet.Utils;
 using RevitMCPCommandSet.Models.MEP;
 using RevitMCPSDK.API.Interfaces;
 
 namespace RevitMCPCommandSet.Services.MEP
 {
-  public class CreateConduitEventHandler : IExternalEventHandler, IWaitableExternalEventHandler
+  public class CreateConduitEventHandler : WaitableEventHandlerBase, IExternalEventHandler, IWaitableExternalEventHandler
   {
     private UIApplication uiApp;
     private UIDocument uiDoc => uiApp.ActiveUIDocument;
     private Document doc => uiDoc.Document;
     private Autodesk.Revit.ApplicationServices.Application app => uiApp.Application;
 
-    private readonly ManualResetEvent _resetEvent = new ManualResetEvent(false);
 
     public List<ConduitCreationInfo> CreatedInfo { get; private set; }
 
@@ -58,10 +58,13 @@ namespace RevitMCPCommandSet.Services.MEP
 
           if (conduitType == null)
           {
-            conduitType = new FilteredElementCollector(doc)
-                .OfClass(typeof(ConduitType))
-                .Cast<ConduitType>()
-                .FirstOrDefault();
+            using (var fec = new FilteredElementCollector(doc))
+            {
+              conduitType = fec
+                  .OfClass(typeof(ConduitType))
+                  .Cast<ConduitType>()
+                  .FirstOrDefault();
+            }
 
             if (conduitType == null)
             {
@@ -129,7 +132,6 @@ namespace RevitMCPCommandSet.Services.MEP
 
     public bool WaitForCompletion(int timeoutMilliseconds = 15000)
     {
-      _resetEvent.Reset();
       return _resetEvent.WaitOne(timeoutMilliseconds);
     }
 

@@ -9,6 +9,14 @@ namespace RevitMCPCommandSet.Commands.ExecuteDynamicCode
     /// </summary>
     public class ExecuteCodeCommand : ExternalEventCommandBase
     {
+        // Instance-level, not static: ExternalEvent.Raise() already serialises
+        // EXECUTION on the Revit UI thread, so a static lock would serialise
+        // unrelated commands against each other for no benefit. What is
+        // unprotected is this command's SHARED HANDLER INSTANCE - the registry
+        // keeps one per command name - between SetParameters() and the handler
+        // reading those parameters on the UI thread.
+        private readonly object _executionLock = new object();
+
         private ExecuteCodeEventHandler _handler => (ExecuteCodeEventHandler)Handler;
 
         public override string CommandName => "send_code_to_revit";
@@ -20,37 +28,40 @@ namespace RevitMCPCommandSet.Commands.ExecuteDynamicCode
 
         public override object Execute(JObject parameters, string requestId)
         {
-            try
+            lock (_executionLock)
             {
-                // Validate parameters
-                if (!parameters.ContainsKey("code"))
+                try
                 {
-                    throw new ArgumentException("Missing required parameter: 'code'");
+                    // Validate parameters
+                    if (!parameters.ContainsKey("code"))
+                    {
+                        throw new ArgumentException("Missing required parameter: 'code'");
+                    }
+
+                    // Parse code and parameters
+                    string code = parameters["code"].Value<string>();
+                    JArray parametersArray = parameters["parameters"] as JArray;
+                    object[] executionParameters = parametersArray?.ToObject<object[]>() ?? Array.Empty<object>();
+                    string transactionMode = parameters["transactionMode"]?.Value<string>() ?? ExecuteCodeEventHandler.TransactionModeAuto;
+
+                    // Set execution parameters
+                    _handler.SetExecutionParameters(code, executionParameters, transactionMode);
+
+                    // Raise the external event and wait for completion
+                    if (RaiseAndWaitForCompletion(60000)) // 1-minute timeout
+                    {
+                        return _handler.ResultInfo;
+                    }
+                    else
+                    {
+                        throw new TimeoutException("Code execution timed out");
+                    }
                 }
-
-                // Parse code and parameters
-                string code = parameters["code"].Value<string>();
-                JArray parametersArray = parameters["parameters"] as JArray;
-                object[] executionParameters = parametersArray?.ToObject<object[]>() ?? Array.Empty<object>();
-                string transactionMode = parameters["transactionMode"]?.Value<string>() ?? ExecuteCodeEventHandler.TransactionModeAuto;
-
-                // Set execution parameters
-                _handler.SetExecutionParameters(code, executionParameters, transactionMode);
-
-                // Raise the external event and wait for completion
-                if (RaiseAndWaitForCompletion(60000)) // 1-minute timeout
+                catch (Exception ex)
                 {
-                    return _handler.ResultInfo;
+                    throw new Exception($"Code execution failed: {ex.Message}", ex);
                 }
-                else
-                {
-                    throw new TimeoutException("Code execution timed out");
-                }
-            }
-            catch (Exception ex)
-            {
-                throw new Exception($"Code execution failed: {ex.Message}", ex);
-            }
+                    }
         }
     }
 }

@@ -2,11 +2,12 @@
 using Autodesk.Revit.DB.Mechanical;
 using Newtonsoft.Json;
 using RevitMCPSDK.API.Interfaces;
+using RevitMCPCommandSet.Utils;
 using RevitMCPCommandSet.Models.Common;
 
 namespace RevitMCPCommandSet.Services
 {
-    public class AIElementFilterEventHandler : IExternalEventHandler, IWaitableExternalEventHandler
+    public class AIElementFilterEventHandler : WaitableEventHandlerBase, IExternalEventHandler, IWaitableExternalEventHandler
     {
         private UIApplication uiApp;
         private UIDocument uiDoc => uiApp.ActiveUIDocument;
@@ -15,7 +16,6 @@ namespace RevitMCPCommandSet.Services
         /// <summary>
         /// Event wait handle
         /// </summary>
-        private readonly ManualResetEvent _resetEvent = new ManualResetEvent(false);
         /// <summary>
         /// Input data (passed in)
         /// </summary>
@@ -90,7 +90,6 @@ namespace RevitMCPCommandSet.Services
         /// <returns>True if the operation completed before the timeout</returns>
         public bool WaitForCompletion(int timeoutMilliseconds = 10000)
         {
-            _resetEvent.Reset();
             return _resetEvent.WaitOne(timeoutMilliseconds);
         }
 
@@ -159,26 +158,23 @@ namespace RevitMCPCommandSet.Services
         private static List<Element> GetElementsByKind(Document doc, FilterSetting settings, bool isElementType, List<string> appliedFilters)
         {
             // Create a base FilteredElementCollector
-            FilteredElementCollector collector;
-            // Check whether to restrict to elements visible in the current view (instance elements only)
-            if (!isElementType && settings.FilterVisibleInCurrentView && doc.ActiveView != null)
+            bool filterByView = !isElementType && settings.FilterVisibleInCurrentView && doc.ActiveView != null;
+            using FilteredElementCollector collector = filterByView
+                ? new FilteredElementCollector(doc, doc.ActiveView.Id)
+                : new FilteredElementCollector(doc);
+            if (filterByView)
             {
-                collector = new FilteredElementCollector(doc, doc.ActiveView.Id);
                 appliedFilters.Add("visible in current view");
-            }
-            else
-            {
-                collector = new FilteredElementCollector(doc);
             }
             // Filter by element kind
             if (isElementType)
             {
-                collector = collector.WhereElementIsElementType();
+                collector.WhereElementIsElementType();
                 appliedFilters.Add("element types only");
             }
             else
             {
-                collector = collector.WhereElementIsNotElementType();
+                collector.WhereElementIsNotElementType();
                 appliedFilters.Add("element instances only");
             }
             // Build the filter list
@@ -266,7 +262,7 @@ namespace RevitMCPCommandSet.Services
                 ElementFilter combinedFilter = filters.Count == 1
                     ? filters[0]
                     : new LogicalAndFilter(filters);
-                collector = collector.WherePasses(combinedFilter);
+                collector.WherePasses(combinedFilter);
                 if (filters.Count > 1)
                 {
                     System.Diagnostics.Trace.WriteLine($"Applied a combined filter with {filters.Count} condition(s) (logical AND)");

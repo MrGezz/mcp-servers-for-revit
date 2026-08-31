@@ -1,16 +1,16 @@
 ﻿using RevitMCPCommandSet.Localization;
+using RevitMCPCommandSet.Utils;
 using RevitMCPCommandSet.Models.Views;
 using RevitMCPSDK.API.Interfaces;
 
 namespace RevitMCPCommandSet.Services.Views
 {
-    public class CreateScheduleEventHandler : IExternalEventHandler, IWaitableExternalEventHandler
+    public class CreateScheduleEventHandler : WaitableEventHandlerBase, IExternalEventHandler, IWaitableExternalEventHandler
     {
         private UIApplication uiApp;
         private UIDocument uiDoc => uiApp.ActiveUIDocument;
         private Document doc => uiDoc.Document;
 
-        private readonly ManualResetEvent _resetEvent = new ManualResetEvent(false);
 
         public List<ScheduleCreationInfo> CreatedInfo { get; private set; }
 
@@ -278,7 +278,6 @@ namespace RevitMCPCommandSet.Services.Views
 
         public bool WaitForCompletion(int timeoutMilliseconds = 15000)
         {
-            _resetEvent.Reset();
             return _resetEvent.WaitOne(timeoutMilliseconds);
         }
 

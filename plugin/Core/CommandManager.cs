@@ -1,9 +1,10 @@
-﻿﻿﻿using Autodesk.Revit.UI;
+﻿using Autodesk.Revit.UI;
 using RevitMCPSDK.API.Interfaces;
 using RevitMCPSDK.API.Utils;
 using revit_mcp_plugin.Configuration;
 using revit_mcp_plugin.Utils;
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
 
@@ -20,6 +21,81 @@ namespace revit_mcp_plugin.Core
         private readonly ConfigurationManager _configManager;
         private readonly UIApplication _uiApplication;
         private readonly RevitVersionAdapter _versionAdapter;
+
+        // Directories to probe when a command assembly's dependency cannot be bound.
+        // Static because the AssemblyResolve event is per-AppDomain: one resolver
+        // serves every CommandManager instance, and registering it more than once
+        // would run the same probe repeatedly for a single failed bind.
+        private static readonly HashSet<string> _probeDirectories =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private static readonly object _probeGate = new object();
+        private static bool _resolverInstalled;
+
+        /// <summary>
+        /// Remember a directory to search for dependencies, and make sure the
+        /// AppDomain resolver that searches it is installed.
+        /// </summary>
+        private static void RegisterProbeDirectory(string directory)
+        {
+            if (string.IsNullOrEmpty(directory)) return;
+
+            lock (_probeGate)
+            {
+                _probeDirectories.Add(directory);
+                if (_resolverInstalled) return;
+                AppDomain.CurrentDomain.AssemblyResolve += ResolveFromProbeDirectories;
+                _resolverInstalled = true;
+            }
+        }
+
+        /// <summary>
+        /// Bind a dependency of a byte-loaded command assembly from the directory it
+        /// shipped in. Returns null when nothing matches, which lets the normal
+        /// binding failure surface unchanged - this resolver only ADDS candidates,
+        /// it never masks a genuine missing-assembly error.
+        /// </summary>
+        private static Assembly ResolveFromProbeDirectories(object sender, ResolveEventArgs args)
+        {
+            string simpleName = new AssemblyName(args.Name).Name;
+            if (string.IsNullOrEmpty(simpleName)) return null;
+
+            // An assembly already in the AppDomain is the correct answer: returning it
+            // avoids loading a SECOND copy of the same identity, which produces the
+            // "type X is not type X" class of error that is very hard to read.
+            foreach (Assembly loaded in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                if (string.Equals(loaded.GetName().Name, simpleName, StringComparison.OrdinalIgnoreCase))
+                    return loaded;
+            }
+
+            string[] directories;
+            lock (_probeGate) { directories = new string[_probeDirectories.Count]; _probeDirectories.CopyTo(directories); }
+
+            foreach (string directory in directories)
+            {
+                string candidate = Path.Combine(directory, simpleName + ".dll");
+                if (!File.Exists(candidate)) continue;
+                try
+                {
+                    // Byte-load here too, for the same unlocking reason as the caller.
+                    return Assembly.Load(File.ReadAllBytes(candidate));
+                }
+                catch (Exception ex)
+                {
+                    // A candidate that will not load is not this resolver's problem to
+                    // REPORT - keep probing, and let the binder raise the real error if
+                    // nothing satisfies the request. But it is not nothing either: a
+                    // dependency that exists on disk and refuses to load is exactly the
+                    // detail someone debugging a bind failure needs, so it is traced
+                    // rather than swallowed. Debug.WriteLine, not the logger, because
+                    // this runs on an AppDomain callback that may fire during shutdown.
+                    System.Diagnostics.Debug.WriteLine(
+                        "AssemblyResolve: candidate '" + candidate + "' failed to load: " + ex.Message);
+                }
+            }
+
+            return null;
+        }
 
         /// <summary>
         /// Manager in charge of loading and managing commands.
@@ -119,11 +195,23 @@ namespace revit_mcp_plugin.Core
                     return;
                 }
 
-                // Load assembly.
-                // Load assembly.
-                Assembly assembly = Assembly.LoadFrom(assemblyPath);
+                // P1-7. Assembly.LoadFrom() held an open file handle on the DLL for
+                // the life of the AppDomain, so updating the add-in required a full
+                // Revit restart. Reading the bytes and calling Assembly.Load releases
+                // the handle immediately.
+                //
+                // THE TRAP THAT OPENS, AND WHY THE RESOLVER BELOW IS NOT OPTIONAL.
+                // LoadFrom places the assembly in the load-FROM context, which probes
+                // the assembly's OWN directory when binding its dependencies.
+                // Assembly.Load(byte[]) loads into the default context, which does
+                // not. Eight assemblies ship beside RevitMCPCommandSet.dll
+                // (Newtonsoft.Json, two Roslyn assemblies, two Nice3point assemblies,
+                // RevitMCPSDK, WinRT.Runtime, Microsoft.Windows.SDK.NET). Without the
+                // resolver each of them would fail to bind at FIRST USE - a crash
+                // during command execution, far away from the load that caused it.
+                RegisterProbeDirectory(Path.GetDirectoryName(assemblyPath));
+                Assembly assembly = Assembly.Load(File.ReadAllBytes(assemblyPath));
 
-                // Find types that implement the IRevitCommand interface.
                 // Find types that implement the IRevitCommand interface.
                 //
                 // registered exists so that "the configured command was never found

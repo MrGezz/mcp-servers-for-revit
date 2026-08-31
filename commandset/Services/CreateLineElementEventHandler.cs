@@ -1,9 +1,10 @@
-﻿using Autodesk.Revit.DB.Mechanical;
+﻿using RevitMCPCommandSet.Utils;
+using Autodesk.Revit.DB.Mechanical;
 using RevitMCPSDK.API.Interfaces;
 
 namespace RevitMCPCommandSet.Services
 {
-    public class CreateLineElementEventHandler : IExternalEventHandler, IWaitableExternalEventHandler
+    public class CreateLineElementEventHandler : WaitableEventHandlerBase, IExternalEventHandler, IWaitableExternalEventHandler
     {
         private UIApplication uiApp;
         private UIDocument uiDoc => uiApp.ActiveUIDocument;
@@ -12,7 +13,6 @@ namespace RevitMCPCommandSet.Services
         /// <summary>
         /// Event wait handle
         /// </summary>
-        private readonly ManualResetEvent _resetEvent = new ManualResetEvent(false);
         /// <summary>
         /// Creation data (input data)
         /// </summary>
@@ -99,10 +99,13 @@ namespace RevitMCPCommandSet.Services
                             if (wallType == null)
                             {
                                 // Requested typeId was invalid or not provided, fall back to first available
-                                wallType = new FilteredElementCollector(doc)
-                                    .OfClass(typeof(WallType))
-                                    .Cast<WallType>()
-                                    .FirstOrDefault();
+                                using (var wallTypeCollector = new FilteredElementCollector(doc))
+                                {
+                                    wallType = wallTypeCollector
+                                        .OfClass(typeof(WallType))
+                                        .Cast<WallType>()
+                                        .FirstOrDefault();
+                                }
                                 if (wallType == null)
                                 {
                                     _warnings.Add($"No wall types available in project.");
@@ -118,10 +121,13 @@ namespace RevitMCPCommandSet.Services
                             if (ductType == null)
                             {
                                 // Requested typeId was invalid or not provided, fall back to first available rectangular duct
-                                ductType = new FilteredElementCollector(doc)
-                                    .OfClass(typeof(DuctType))
-                                    .Cast<DuctType>()
-                                    .FirstOrDefault(d => d.Shape == ConnectorProfileType.Rectangular);
+                                using (var ductTypeCollector = new FilteredElementCollector(doc))
+                                {
+                                    ductType = ductTypeCollector
+                                        .OfClass(typeof(DuctType))
+                                        .Cast<DuctType>()
+                                        .FirstOrDefault(d => d.Shape == ConnectorProfileType.Rectangular);
+                                }
                                 if (ductType == null)
                                 {
                                     _warnings.Add($"No rectangular duct types available in project.");
@@ -136,18 +142,24 @@ namespace RevitMCPCommandSet.Services
                         default:
                             if (symbol == null)
                             {
-                                symbol = new FilteredElementCollector(doc)
-                                    .OfClass(typeof(FamilySymbol))
-                                    .OfCategory(builtInCategory)
-                                    .Cast<FamilySymbol>()
-                                    .FirstOrDefault(fs => fs.IsActive); // Use the first active type as the default
+                                using (var symCollector = new FilteredElementCollector(doc))
+                                {
+                                    symbol = symCollector
+                                        .OfClass(typeof(FamilySymbol))
+                                        .OfCategory(builtInCategory)
+                                        .Cast<FamilySymbol>()
+                                        .FirstOrDefault(fs => fs.IsActive); // Use the first active type as the default
+                                }
                                 if (symbol == null)
                                 {
-                                    symbol = new FilteredElementCollector(doc)
-                                    .OfClass(typeof(FamilySymbol))
-                                    .OfCategory(builtInCategory)
-                                    .Cast<FamilySymbol>()
-                                    .FirstOrDefault();
+                                    using (var symCollector2 = new FilteredElementCollector(doc))
+                                    {
+                                        symbol = symCollector2
+                                            .OfClass(typeof(FamilySymbol))
+                                            .OfCategory(builtInCategory)
+                                            .Cast<FamilySymbol>()
+                                            .FirstOrDefault();
+                                    }
                                 }
                                 if (symbol == null)
                                 {
@@ -230,10 +242,14 @@ namespace RevitMCPCommandSet.Services
                             case BuiltInCategory.OST_DuctCurves:
                                 Duct duct = null;
                                 // Get MEP system type (required)
-                                MEPSystemType mepSystemType = new FilteredElementCollector(doc)
-                                    .OfClass(typeof(MEPSystemType))
-                                    .Cast<MEPSystemType>()
-                                    .FirstOrDefault(m => m.SystemClassification == MEPSystemClassification.SupplyAir);
+                                MEPSystemType mepSystemType;
+                                using (var mepCollector = new FilteredElementCollector(doc))
+                                {
+                                    mepSystemType = mepCollector
+                                        .OfClass(typeof(MEPSystemType))
+                                        .Cast<MEPSystemType>()
+                                        .FirstOrDefault(m => m.SystemClassification == MEPSystemClassification.SupplyAir);
+                                }
 
                                 if (mepSystemType != null)
                                 {
@@ -318,7 +334,6 @@ namespace RevitMCPCommandSet.Services
         /// <returns>True if the operation completed before the timeout; otherwise, false.</returns>
         public bool WaitForCompletion(int timeoutMilliseconds = 10000)
         {
-            _resetEvent.Reset();
             return _resetEvent.WaitOne(timeoutMilliseconds);
         }
 
@@ -341,24 +356,35 @@ namespace RevitMCPCommandSet.Services
         {
             // If no valid type exists,
             // check for an existing wall type with the specified thickness first
-            WallType existingType = new FilteredElementCollector(doc)
+            WallType existingType;
+            using (var existCollector = new FilteredElementCollector(doc))
+            {
+                existingType = existCollector
                                     .OfClass(typeof(WallType))
                                     .Cast<WallType>()
                                     .FirstOrDefault(w => w.Name == $"{_wallName}{width * 304.8}mm");
+            }
             if (existingType != null)
                 return existingType;
 
             // Not found — create a new wall type based on an existing generic wall
-            WallType baseWallType = new FilteredElementCollector(doc)
+            WallType baseWallType;
+            using (var baseCollector = new FilteredElementCollector(doc))
+            {
+                baseWallType = baseCollector
                                     .OfClass(typeof(WallType))
                                     .Cast<WallType>()
-                                    .FirstOrDefault(w => w.Name.Contains("Generic")); ;
+                                    .FirstOrDefault(w => w.Name.Contains("Generic"));
+            }
             if (baseWallType == null)
             {
-                baseWallType = new FilteredElementCollector(doc)
-                                    .OfClass(typeof(WallType))
-                                    .Cast<WallType>()
-                                    .FirstOrDefault(); ;
+                using (var fallbackCollector = new FilteredElementCollector(doc))
+                {
+                    baseWallType = fallbackCollector
+                                        .OfClass(typeof(WallType))
+                                        .Cast<WallType>()
+                                        .FirstOrDefault();
+                }
             }
 
             if (baseWallType == null)
@@ -404,19 +430,27 @@ namespace RevitMCPCommandSet.Services
             string typeName = $"{_ductName}{width * 304.8}x{height * 304.8}mm";
 
             // Check for an existing duct type with the specified dimensions first
-            DuctType existingType = new FilteredElementCollector(doc)
+            DuctType existingType;
+            using (var existCollector = new FilteredElementCollector(doc))
+            {
+                existingType = existCollector
                                     .OfClass(typeof(DuctType))
                                     .Cast<DuctType>()
                                     .FirstOrDefault(d => d.Name == typeName && d.Shape == ConnectorProfileType.Rectangular);
+            }
 
             if (existingType != null)
                 return existingType;
 
             // Not found — create a new duct type based on an existing rectangular duct type
-            DuctType baseDuctType = new FilteredElementCollector(doc)
+            DuctType baseDuctType;
+            using (var baseCollector = new FilteredElementCollector(doc))
+            {
+                baseDuctType = baseCollector
                                     .OfClass(typeof(DuctType))
                                     .Cast<DuctType>()
                                     .FirstOrDefault(d => d.Shape == ConnectorProfileType.Rectangular);
+            }
 
             if (baseDuctType == null)
                 throw new InvalidOperationException("No usable base rectangular duct type found.");

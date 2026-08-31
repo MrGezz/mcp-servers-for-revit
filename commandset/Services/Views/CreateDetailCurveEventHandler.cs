@@ -1,15 +1,15 @@
-﻿using Newtonsoft.Json.Linq;
+﻿using RevitMCPCommandSet.Utils;
+using Newtonsoft.Json.Linq;
 using RevitMCPSDK.API.Interfaces;
 
 namespace RevitMCPCommandSet.Services.Views
 {
-    public class CreateDetailCurveEventHandler : IExternalEventHandler, IWaitableExternalEventHandler
+    public class CreateDetailCurveEventHandler : WaitableEventHandlerBase, IExternalEventHandler, IWaitableExternalEventHandler
     {
         private UIApplication uiApp;
         private UIDocument uiDoc => uiApp.ActiveUIDocument;
         private Document doc => uiDoc.Document;
 
-        private readonly ManualResetEvent _resetEvent = new ManualResetEvent(false);
 
         public int ViewId { get; private set; }
         public List<JObject> Lines { get; private set; }
@@ -87,7 +87,6 @@ namespace RevitMCPCommandSet.Services.Views
 
         public bool WaitForCompletion(int timeoutMilliseconds = 10000)
         {
-            _resetEvent.Reset();
             return _resetEvent.WaitOne(timeoutMilliseconds);
         }
 

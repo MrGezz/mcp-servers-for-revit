@@ -21,6 +21,7 @@
 // SOFTWARE.
 //
 
+using RevitMCPCommandSet.Utils;
 using RevitMCPCommandSet.Models.Annotation;
 using RevitMCPSDK.API.Interfaces;
 
@@ -29,14 +30,13 @@ namespace RevitMCPCommandSet.Services.AnnotationComponents;
 /// <summary>
 ///     Handles creation of dimension elements in Revit
 /// </summary>
-public class CreateDimensionEventHandler : IExternalEventHandler, IWaitableExternalEventHandler
+public class CreateDimensionEventHandler : WaitableEventHandlerBase, IExternalEventHandler, IWaitableExternalEventHandler
 {
     #region Fields
 
     private UIApplication _uiApp;
     private UIDocument UiDoc => _uiApp.ActiveUIDocument;
     private Document Doc => UiDoc.Document;
-    private readonly ManualResetEvent _resetEvent = new(false);
     private const double MILLIMETERS_TO_FEET = 1.0 / 304.8;
 
     #endregion
@@ -235,7 +235,6 @@ public class CreateDimensionEventHandler : IExternalEventHandler, IWaitableExter
     /// <returns>True if operation completed within timeout</returns>
     public bool WaitForCompletion(int timeoutMilliseconds = 10000)
     {
-        _resetEvent.Reset();
         return _resetEvent.WaitOne(timeoutMilliseconds);
     }
 
@@ -408,7 +407,7 @@ public class CreateDimensionEventHandler : IExternalEventHandler, IWaitableExter
         {
             // For simplicity in this example, just pick elements near the point
             // This is a less precise method but works for all view types
-            FilteredElementCollector collector = new FilteredElementCollector(Doc, view.Id);
+            using FilteredElementCollector collector = new FilteredElementCollector(Doc, view.Id);
 
             // Get all elements in the view
             var elements = collector

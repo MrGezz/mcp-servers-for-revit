@@ -29,6 +29,7 @@ namespace revit_mcp_plugin.Core
         private ICommandRegistry _commandRegistry;
         private ILogger _logger;
         private CommandExecutor _commandExecutor;
+        private int _mainThreadId;
 
         public static SocketService Instance
         {
@@ -69,8 +70,13 @@ namespace revit_mcp_plugin.Core
 
 
 
+            // Capture the Revit main thread identity so that CommandExecutor can
+            // detect off-thread command execution and fail loudly instead of
+            // letting an unguarded Revit API call crash the process.
+            _mainThreadId = Thread.CurrentThread.ManagedThreadId;
+
             // Create CommandExecutor
-            _commandExecutor = new CommandExecutor(_commandRegistry, _logger);
+            _commandExecutor = new CommandExecutor(_commandRegistry, _logger, _mainThreadId);
 
             // Load configuration and register commands.
             ConfigurationManager configManager = new ConfigurationManager(_logger);
@@ -111,9 +117,10 @@ namespace revit_mcp_plugin.Core
                     return;
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 _isRunning = false;
+                _logger.Error("Socket service failed to start on port {0}: {1}", _port, ex.Message);
             }
         }
 
@@ -128,7 +135,7 @@ namespace revit_mcp_plugin.Core
                 foreach (TcpListener listener in _listeners)
                 {
                     try { listener.Stop(); }
-                    catch (Exception) { }
+                    catch (Exception ex) { _logger.Warning("Error stopping listener: {0}", ex.Message); }
                 }
                 _listeners.Clear();
 
@@ -141,9 +148,9 @@ namespace revit_mcp_plugin.Core
                 }
                 _listenerThreads.Clear();
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                // log error
+                _logger.Error("Error during socket service shutdown: {0}", ex.Message);
             }
         }
 
@@ -208,7 +215,7 @@ namespace revit_mcp_plugin.Core
                     // failing is reported by the caller. Either way, name which and why.
                     _logger.Warning("Could not bind {0}:{1}: {2}", address, _port, ex.Message);
                     try { if (listener != null) listener.Stop(); }
-                    catch (Exception) { }
+                    catch (Exception cleanupEx) { _logger.Warning("Cleanup of failed listener: {0}", cleanupEx.Message); }
                 }
             }
         }
@@ -232,11 +239,12 @@ namespace revit_mcp_plugin.Core
             }
             catch (SocketException)
             {
-                
+                // Expected when Stop() closes the listener socket during shutdown.
+                _logger.Info("Listener stopped.");
             }
-            catch(Exception)
+            catch (Exception ex)
             {
-                // log
+                _logger.Error("Listener thread error: {0}", ex.Message);
             }
         }
 
@@ -312,9 +320,9 @@ namespace revit_mcp_plugin.Core
                     stream.Write(responseData, 0, responseData.Length);
                 }
             }
-            catch(Exception)
+            catch (Exception ex)
             {
-                // log
+                _logger.Error("Client communication error: {0}", ex.Message);
             }
             finally
             {
@@ -380,24 +388,9 @@ namespace revit_mcp_plugin.Core
                     );
                 }
 
-                // Search for the command in the registry.
-                if (!_commandRegistry.TryGetCommand(request.Method, out var command))
-                {
-                    return CreateErrorResponse(request.Id, JsonRPCErrorCodes.MethodNotFound,
-                        $"Method '{request.Method}' not found");
-                }
-
-                // Execute command.
-                try
-                {                
-                    object result = command.Execute(request.GetParamsObject(), request.Id);
-
-                    return CreateSuccessResponse(request.Id, result);
-                }
-                catch (Exception ex)
-                {
-                    return CreateErrorResponse(request.Id, JsonRPCErrorCodes.InternalError, ex.Message);
-                }
+                // Delegate to CommandExecutor, which owns the registry lookup,
+                // the thread-safety guard, and structured error handling.
+                return _commandExecutor.ExecuteCommand(request);
             }
             catch (JsonException)
             {
@@ -417,17 +410,6 @@ namespace revit_mcp_plugin.Core
                     $"Internal error: {ex.Message}"
                 );
             }
-        }
-
-        private string CreateSuccessResponse(string id, object result)
-        {
-            var response = new JsonRPCSuccessResponse
-            {
-                Id = id,
-                Result = result is JToken jToken ? jToken : JToken.FromObject(result)
-            };
-
-            return response.ToJson();
         }
 
         private string CreateErrorResponse(string id, int code, string message, object data = null)

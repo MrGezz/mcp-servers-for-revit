@@ -1,8 +1,9 @@
-﻿using RevitMCPSDK.API.Interfaces;
+﻿using RevitMCPCommandSet.Utils;
+using RevitMCPSDK.API.Interfaces;
 
 namespace RevitMCPCommandSet.Services
 {
-    public class CreatePointElementEventHandler : IExternalEventHandler, IWaitableExternalEventHandler
+    public class CreatePointElementEventHandler : WaitableEventHandlerBase, IExternalEventHandler, IWaitableExternalEventHandler
     {
         private UIApplication uiApp;
         private UIDocument uiDoc => uiApp.ActiveUIDocument;
@@ -12,7 +13,6 @@ namespace RevitMCPCommandSet.Services
         /// <summary>
         /// Event wait object.
         /// </summary>
-        private readonly ManualResetEvent _resetEvent = new ManualResetEvent(false);
         /// <summary>
         /// Creation data (input data).
         /// </summary>
@@ -79,18 +79,24 @@ namespace RevitMCPCommandSet.Services
                         continue;
                     if (symbol == null)
                     {
-                        symbol = new FilteredElementCollector(doc)
-                            .OfClass(typeof(FamilySymbol))
-                            .OfCategory(builtInCategory)
-                            .Cast<FamilySymbol>()
-                            .FirstOrDefault(fs => fs.IsActive); // Use the first active type as the default
+                        using (var symbolCollector = new FilteredElementCollector(doc))
+                        {
+                            symbol = symbolCollector
+                                .OfClass(typeof(FamilySymbol))
+                                .OfCategory(builtInCategory)
+                                .Cast<FamilySymbol>()
+                                .FirstOrDefault(fs => fs.IsActive); // Use the first active type as the default
+                        }
                         if (symbol == null)
                         {
-                            symbol = new FilteredElementCollector(doc)
-                            .OfClass(typeof(FamilySymbol))
-                            .OfCategory(builtInCategory)
-                            .Cast<FamilySymbol>()
-                            .FirstOrDefault();
+                            using (var symbolCollector2 = new FilteredElementCollector(doc))
+                            {
+                                symbol = symbolCollector2
+                                    .OfClass(typeof(FamilySymbol))
+                                    .OfCategory(builtInCategory)
+                                    .Cast<FamilySymbol>()
+                                    .FirstOrDefault();
+                            }
                         }
                         if (symbol == null)
                         {
@@ -248,7 +254,6 @@ namespace RevitMCPCommandSet.Services
         /// <returns>Whether the operation completed before the timeout expired</returns>
         public bool WaitForCompletion(int timeoutMilliseconds = 10000)
         {
-            _resetEvent.Reset();
         return _resetEvent.WaitOne(timeoutMilliseconds);
         }
 

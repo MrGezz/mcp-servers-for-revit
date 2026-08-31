@@ -76,6 +76,14 @@ public class WallCreationInfo
     public JZPoint EndPoint { get; set; }
 
     /// <summary>
+    ///     Optional arc midpoint for curved walls (mm).
+    ///     When supplied, the wall curve is a three-point arc
+    ///     (start → mid → end) instead of a straight line.
+    /// </summary>
+    [JsonProperty("midPoint")]
+    public JZPoint MidPoint { get; set; }
+
+    /// <summary>
     ///     Wall height (mm)
     /// </summary>
     [JsonProperty("height")]

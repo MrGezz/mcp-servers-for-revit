@@ -7,7 +7,7 @@ namespace RevitMCPCommandSet.Commands.Access
 {
     public class GetAvailableFamilyTypesCommand : ExternalEventCommandBase
     {
-        private static readonly object _executionLock = new object();
+        private readonly object _executionLock = new object();
         private GetAvailableFamilyTypesEventHandler _handler => (GetAvailableFamilyTypesEventHandler)Handler;
 
         public override string CommandName => "get_available_family_types";

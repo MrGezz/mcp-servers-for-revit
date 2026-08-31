@@ -1,11 +1,11 @@
-﻿using Autodesk.Revit.UI;
+﻿using RevitMCPCommandSet.Utils;
+using Autodesk.Revit.UI;
 using RevitMCPSDK.API.Interfaces;
 
 namespace RevitMCPCommandSet.Services
 {
-    public class SayHelloEventHandler : IExternalEventHandler, IWaitableExternalEventHandler
+    public class SayHelloEventHandler : WaitableEventHandlerBase, IExternalEventHandler, IWaitableExternalEventHandler
     {
-        private readonly ManualResetEvent _resetEvent = new ManualResetEvent(false);
 
         public string Message { get; set; } = "Hello MCP!";
 
@@ -27,7 +27,6 @@ namespace RevitMCPCommandSet.Services
 
         public bool WaitForCompletion(int timeoutMilliseconds = 10000)
         {
-            _resetEvent.Reset();
             return _resetEvent.WaitOne(timeoutMilliseconds);
         }
 
@@ -39,11 +38,22 @@ namespace RevitMCPCommandSet.Services
                 DocumentTitle = app.ActiveUIDocument?.Document?.Title ?? "(no document open)";
                 DialogShown = false;
 
+                // P1-5. The dialog is compiled out of release builds entirely, because
+                // a modal TaskDialog raised here runs on the API thread and blocks the
+                // ExternalEvent queue that EVERY other command shares.
+                //
+                // DialogShown is initialised false above and is deliberately left false
+                // in release: that is the truth, not a lost signal. A release build
+                // shows no dialog, so a response saying dialogShown=false describes what
+                // actually happened. The showDialog request is honoured only where the
+                // dialog can be honoured.
+#if DEBUG
                 if (ShowDialog)
                 {
                     DialogShown = true;
                     TaskDialog.Show("Revit MCP", Message);
                 }
+#endif
             }
             finally
             {

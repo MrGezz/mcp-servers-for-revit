@@ -1,10 +1,11 @@
 using Autodesk.Revit.DB.Structure;
+using RevitMCPCommandSet.Utils;
 using RevitMCPCommandSet.Models.Structure;
 using RevitMCPSDK.API.Interfaces;
 
 namespace RevitMCPCommandSet.Services
 {
-    public class CreateStructuralFramingSystemEventHandler : IExternalEventHandler, IWaitableExternalEventHandler
+    public class CreateStructuralFramingSystemEventHandler : WaitableEventHandlerBase, IExternalEventHandler, IWaitableExternalEventHandler
     {
         private UIApplication uiApp;
         private UIDocument uiDoc => uiApp.ActiveUIDocument;
@@ -13,7 +14,6 @@ namespace RevitMCPCommandSet.Services
         /// <summary>
         /// Event synchronization object
         /// </summary>
-        private readonly ManualResetEvent _resetEvent = new ManualResetEvent(false);
 
         /// <summary>
         /// Beam system creation parameters
@@ -63,10 +63,14 @@ namespace RevitMCPCommandSet.Services
                 }
 
                 // Check if structural framing families exist
-                int beamTypeCount = new FilteredElementCollector(doc)
-                    .OfClass(typeof(FamilySymbol))
-                    .OfCategory(BuiltInCategory.OST_StructuralFraming)
-                    .GetElementCount();
+                int beamTypeCount;
+                using (var beamTypeCounter = new FilteredElementCollector(doc))
+                {
+                    beamTypeCount = beamTypeCounter
+                        .OfClass(typeof(FamilySymbol))
+                        .OfCategory(BuiltInCategory.OST_StructuralFraming)
+                        .GetElementCount();
+                }
 
                 if (beamTypeCount == 0)
                 {
@@ -88,10 +92,13 @@ namespace RevitMCPCommandSet.Services
                     if (level == null)
                     {
                         // Fallback: try to find any level
-                        level = new FilteredElementCollector(doc)
-                            .OfClass(typeof(Level))
-                            .Cast<Level>()
-                            .FirstOrDefault();
+                        using (var levelCollector = new FilteredElementCollector(doc))
+                        {
+                            level = levelCollector
+                                .OfClass(typeof(Level))
+                                .Cast<Level>()
+                                .FirstOrDefault();
+                        }
                     }
                     if (level == null)
                     {
@@ -276,10 +283,14 @@ namespace RevitMCPCommandSet.Services
         private Level ResolveLevel(Document doc, string levelName, List<string> warnings)
         {
             // Try exact name match first
-            Level level = new FilteredElementCollector(doc)
-                .OfClass(typeof(Level))
-                .Cast<Level>()
-                .FirstOrDefault(l => l.Name.Equals(levelName, StringComparison.OrdinalIgnoreCase));
+            Level level;
+            using (var levelCollector = new FilteredElementCollector(doc))
+            {
+                level = levelCollector
+                    .OfClass(typeof(Level))
+                    .Cast<Level>()
+                    .FirstOrDefault(l => l.Name.Equals(levelName, StringComparison.OrdinalIgnoreCase));
+            }
 
             if (level != null) return level;
 
@@ -302,11 +313,15 @@ namespace RevitMCPCommandSet.Services
             }
 
             // If still null, throw with available levels
-            var availableLevels = new FilteredElementCollector(doc)
-                .OfClass(typeof(Level))
-                .Cast<Level>()
-                .Select(l => l.Name)
-                .ToList();
+            List<string> availableLevels;
+            using (var availLevelCollector = new FilteredElementCollector(doc))
+            {
+                availableLevels = availLevelCollector
+                    .OfClass(typeof(Level))
+                    .Cast<Level>()
+                    .Select(l => l.Name)
+                    .ToList();
+            }
 
             throw new Exception($"Level '{levelName}' not found. Available levels: {string.Join(", ", availableLevels)}");
         }
@@ -333,10 +348,14 @@ namespace RevitMCPCommandSet.Services
             double elevation = levelNumber * standardFloorHeight;
 
             // Check if a level already exists at this elevation
-            Level existingAtElevation = new FilteredElementCollector(doc)
-                .OfClass(typeof(Level))
-                .Cast<Level>()
-                .FirstOrDefault(l => Math.Abs(l.Elevation - elevation) < 0.01); // Within 0.01 ft tolerance
+            Level existingAtElevation;
+            using (var elevCollector = new FilteredElementCollector(doc))
+            {
+                existingAtElevation = elevCollector
+                    .OfClass(typeof(Level))
+                    .Cast<Level>()
+                    .FirstOrDefault(l => Math.Abs(l.Elevation - elevation) < 0.01); // Within 0.01 ft tolerance
+            }
 
             if (existingAtElevation != null)
             {
@@ -354,10 +373,14 @@ namespace RevitMCPCommandSet.Services
 
                 // 2. Create associated floor plan view (REQUIRED for BeamSystem.Create)
                 // Find the ViewFamilyType for floor plans
-                ViewFamilyType floorPlanVFT = new FilteredElementCollector(doc)
-                    .OfClass(typeof(ViewFamilyType))
-                    .Cast<ViewFamilyType>()
-                    .FirstOrDefault(vft => vft.ViewFamily == ViewFamily.FloorPlan);
+                ViewFamilyType floorPlanVFT;
+                using (var vftCollector = new FilteredElementCollector(doc))
+                {
+                    floorPlanVFT = vftCollector
+                        .OfClass(typeof(ViewFamilyType))
+                        .Cast<ViewFamilyType>()
+                        .FirstOrDefault(vft => vft.ViewFamily == ViewFamily.FloorPlan);
+                }
 
                 if (floorPlanVFT != null)
                 {
@@ -440,34 +463,43 @@ namespace RevitMCPCommandSet.Services
             if (!string.IsNullOrEmpty(beamTypeName))
             {
                 // Try to find by name (check both just name and "Family: Name" format)
-                beamType = new FilteredElementCollector(doc)
-                    .OfClass(typeof(FamilySymbol))
-                    .OfCategory(BuiltInCategory.OST_StructuralFraming)
-                    .Cast<FamilySymbol>()
-                    .FirstOrDefault(fs =>
-                        fs.Name.IndexOf(beamTypeName, StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        fs.Family.Name.IndexOf(beamTypeName, StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        $"{fs.Family.Name}: {fs.Name}".IndexOf(beamTypeName, StringComparison.OrdinalIgnoreCase) >= 0);
+                using (var beamCollector = new FilteredElementCollector(doc))
+                {
+                    beamType = beamCollector
+                        .OfClass(typeof(FamilySymbol))
+                        .OfCategory(BuiltInCategory.OST_StructuralFraming)
+                        .Cast<FamilySymbol>()
+                        .FirstOrDefault(fs =>
+                            fs.Name.IndexOf(beamTypeName, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                            fs.Family.Name.IndexOf(beamTypeName, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                            $"{fs.Family.Name}: {fs.Name}".IndexOf(beamTypeName, StringComparison.OrdinalIgnoreCase) >= 0);
+                }
             }
 
             // Fallback to first active beam type
             if (beamType == null)
             {
-                beamType = new FilteredElementCollector(doc)
-                    .OfClass(typeof(FamilySymbol))
-                    .OfCategory(BuiltInCategory.OST_StructuralFraming)
-                    .Cast<FamilySymbol>()
-                    .FirstOrDefault(fs => fs.IsActive);
+                using (var activeCollector = new FilteredElementCollector(doc))
+                {
+                    beamType = activeCollector
+                        .OfClass(typeof(FamilySymbol))
+                        .OfCategory(BuiltInCategory.OST_StructuralFraming)
+                        .Cast<FamilySymbol>()
+                        .FirstOrDefault(fs => fs.IsActive);
+                }
             }
 
             // Fallback to first beam type (even if inactive)
             if (beamType == null)
             {
-                beamType = new FilteredElementCollector(doc)
-                    .OfClass(typeof(FamilySymbol))
-                    .OfCategory(BuiltInCategory.OST_StructuralFraming)
-                    .Cast<FamilySymbol>()
-                    .FirstOrDefault();
+                using (var anyCollector = new FilteredElementCollector(doc))
+                {
+                    beamType = anyCollector
+                        .OfClass(typeof(FamilySymbol))
+                        .OfCategory(BuiltInCategory.OST_StructuralFraming)
+                        .Cast<FamilySymbol>()
+                        .FirstOrDefault();
+                }
             }
 
             if (beamType == null)
@@ -500,7 +532,6 @@ namespace RevitMCPCommandSet.Services
         /// </summary>
         public bool WaitForCompletion(int timeoutMilliseconds = 15000)
         {
-            _resetEvent.Reset();
         return _resetEvent.WaitOne(timeoutMilliseconds);
         }
 

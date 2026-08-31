@@ -7,7 +7,7 @@ namespace RevitMCPCommandSet.Commands.Delete
 {
     public class DeleteElementCommand : ExternalEventCommandBase
     {
-        private static readonly object _executionLock = new object();
+        private readonly object _executionLock = new object();
         private DeleteElementEventHandler _handler => (DeleteElementEventHandler)Handler;
 
         public override string CommandName => "delete_element";

@@ -1,4 +1,5 @@
 ﻿using Autodesk.Revit.DB.Architecture;
+using RevitMCPCommandSet.Utils;
 using RevitMCPCommandSet.Models.Architecture;
 using RevitMCPSDK.API.Interfaces;
 
@@ -36,7 +37,7 @@ namespace RevitMCPCommandSet.Services.Architecture
     /// <summary>
     /// Event handler for creating rooms in Revit
     /// </summary>
-    public class CreateRoomEventHandler : IExternalEventHandler, IWaitableExternalEventHandler
+    public class CreateRoomEventHandler : WaitableEventHandlerBase, IExternalEventHandler, IWaitableExternalEventHandler
     {
         private UIApplication _uiApp;
         private UIDocument _uiDoc => _uiApp.ActiveUIDocument;
@@ -45,7 +46,6 @@ namespace RevitMCPCommandSet.Services.Architecture
         /// <summary>
         /// Event wait object for synchronization
         /// </summary>
-        private readonly ManualResetEvent _resetEvent = new ManualResetEvent(false);
 
         /// <summary>
         /// Room creation data (input)
@@ -76,11 +76,15 @@ namespace RevitMCPCommandSet.Services.Architecture
 
                 // Get all existing room numbers to avoid duplicates
                 HashSet<string> existingRoomNumbers = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                var existingRooms = new FilteredElementCollector(_doc)
-                    .OfCategory(BuiltInCategory.OST_Rooms)
-                    .WhereElementIsNotElementType()
-                    .Cast<Room>()
-                    .ToList();
+                List<Room> existingRooms;
+                using (var fec = new FilteredElementCollector(_doc))
+                {
+                    existingRooms = fec
+                        .OfCategory(BuiltInCategory.OST_Rooms)
+                        .WhereElementIsNotElementType()
+                        .Cast<Room>()
+                        .ToList();
+                }
 
                 foreach (var existingRoom in existingRooms)
                 {
@@ -122,11 +126,14 @@ namespace RevitMCPCommandSet.Services.Architecture
                         if (level == null)
                         {
                             // Use the first available level
-                            level = new FilteredElementCollector(_doc)
-                                .OfClass(typeof(Level))
-                                .Cast<Level>()
-                                .OrderBy(l => l.Elevation)
-                                .FirstOrDefault();
+                            using (var fec = new FilteredElementCollector(_doc))
+                            {
+                                level = fec
+                                    .OfClass(typeof(Level))
+                                    .Cast<Level>()
+                                    .OrderBy(l => l.Elevation)
+                                    .FirstOrDefault();
+                            }
                         }
 
                         if (level == null)
@@ -287,10 +294,14 @@ namespace RevitMCPCommandSet.Services.Architecture
         /// </summary>
         private Level FindNearestLevel(double elevationInFeet)
         {
-            var levels = new FilteredElementCollector(_doc)
-                .OfClass(typeof(Level))
-                .Cast<Level>()
-                .ToList();
+            List<Level> levels;
+            using (var fec = new FilteredElementCollector(_doc))
+            {
+                levels = fec
+                    .OfClass(typeof(Level))
+                    .Cast<Level>()
+                    .ToList();
+            }
 
             Level nearestLevel = null;
             double minDistance = double.MaxValue;
@@ -449,7 +460,6 @@ namespace RevitMCPCommandSet.Services.Architecture
         /// <returns>True if completed before timeout</returns>
         public bool WaitForCompletion(int timeoutMilliseconds = 10000)
         {
-            _resetEvent.Reset();
         return _resetEvent.WaitOne(timeoutMilliseconds);
         }
 

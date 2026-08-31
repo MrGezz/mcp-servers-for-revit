@@ -1,18 +1,18 @@
 ﻿using Autodesk.Revit.DB.Architecture;
+using RevitMCPCommandSet.Utils;
 using RevitMCPCommandSet.Models.Common;
 using RevitMCPCommandSet.Models.DataExtraction;
 using RevitMCPSDK.API.Interfaces;
 
 namespace RevitMCPCommandSet.Services.DataExtraction
 {
-    public class ExportRoomDataEventHandler : IExternalEventHandler, IWaitableExternalEventHandler
+    public class ExportRoomDataEventHandler : WaitableEventHandlerBase, IExternalEventHandler, IWaitableExternalEventHandler
     {
         private bool _includeUnplacedRooms;
         private bool _includeNotEnclosedRooms;
 
         public AIResult<ExportRoomDataResult> ResultInfo { get; private set; }
         public bool TaskCompleted { get; private set; }
-        private readonly ManualResetEvent _resetEvent = new ManualResetEvent(false);
 
         public void SetParameters(bool includeUnplacedRooms = false, bool includeNotEnclosedRooms = false)
         {
@@ -24,7 +24,6 @@ namespace RevitMCPCommandSet.Services.DataExtraction
 
         public bool WaitForCompletion(int timeoutMilliseconds = 10000)
         {
-            _resetEvent.Reset();
         return _resetEvent.WaitOne(timeoutMilliseconds);
         }
 
@@ -37,10 +36,13 @@ namespace RevitMCPCommandSet.Services.DataExtraction
                 double totalArea = 0;
 
                 // Collect all rooms in the project
-                var roomCollector = new FilteredElementCollector(doc)
-                    .OfCategory(BuiltInCategory.OST_Rooms)
-                    .WhereElementIsNotElementType()
-                    .Cast<Room>();
+                List<Room> roomCollector;
+                using (var coll = new FilteredElementCollector(doc))
+                    roomCollector = coll
+                        .OfCategory(BuiltInCategory.OST_Rooms)
+                        .WhereElementIsNotElementType()
+                        .Cast<Room>()
+                        .ToList();
 
                 foreach (Room room in roomCollector)
                 {

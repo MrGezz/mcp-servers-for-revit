@@ -1,8 +1,9 @@
-﻿using RevitMCPSDK.API.Interfaces;
+﻿using RevitMCPCommandSet.Utils;
+using RevitMCPSDK.API.Interfaces;
 
 namespace RevitMCPCommandSet.Services
 {
-    public class TagWallsEventHandler : IExternalEventHandler, IWaitableExternalEventHandler
+    public class TagWallsEventHandler : WaitableEventHandlerBase, IExternalEventHandler, IWaitableExternalEventHandler
     {
         private UIApplication uiApp;
         private UIDocument uiDoc => uiApp.ActiveUIDocument;
@@ -12,7 +13,6 @@ namespace RevitMCPCommandSet.Services
         /// <summary>
         /// Event wait handle
         /// </summary>
-        private readonly ManualResetEvent _resetEvent = new ManualResetEvent(false);
 
         /// <summary>
         /// Tag result data
@@ -40,8 +40,19 @@ namespace RevitMCPCommandSet.Services
             {
                 View activeView = doc.ActiveView;
 
+                // Guard: tags cannot be created in a 3D view
+                if (activeView is View3D || activeView.ViewType == ViewType.ThreeD)
+                {
+                    TaggingResults = new
+                    {
+                        success = false,
+                        message = "Tags can only be created in a 2D view"
+                    };
+                    return;
+                }
+
                 // Get all walls in the current view
-                FilteredElementCollector wallCollector = new FilteredElementCollector(doc, activeView.Id);
+                using FilteredElementCollector wallCollector = new FilteredElementCollector(doc, activeView.Id);
                 ICollection<Element> walls = wallCollector.OfCategory(BuiltInCategory.OST_Walls)
                                                          .WhereElementIsNotElementType()
                                                          .ToElements();
@@ -201,7 +212,6 @@ try
         /// <returns>Whether the operation completed before the timeout</returns>
         public bool WaitForCompletion(int timeoutMilliseconds = 10000)
         {
-            _resetEvent.Reset();
             return _resetEvent.WaitOne(timeoutMilliseconds);
         }
 
@@ -234,22 +244,28 @@ try
                 }
             }
 
-            FilteredElementCollector tagCollector = new FilteredElementCollector(doc);
-            FamilySymbol wallTagType = tagCollector.OfClass(typeof(FamilySymbol))
+            FamilySymbol wallTagType;
+            using (var tagCollector = new FilteredElementCollector(doc))
+            {
+                wallTagType = tagCollector.OfClass(typeof(FamilySymbol))
                                                   .WhereElementIsElementType()
                                                   .Where(e => e.Category != null &&
                                                          e.Category.Id.GetIntValue() == (int)BuiltInCategory.OST_WallTags)
                                                   .Cast<FamilySymbol>()
                                                   .FirstOrDefault();
+            }
 
             if (wallTagType == null)
             {
-                wallTagType = tagCollector.OfClass(typeof(FamilySymbol))
-                                         .WhereElementIsElementType()
-                                         .Where(e => e.Category != null &&
-                                                e.Category.Id.GetIntValue() == (int)BuiltInCategory.OST_MultiCategoryTags)
-                                         .Cast<FamilySymbol>()
-                                         .FirstOrDefault();
+                using (var tagCollector2 = new FilteredElementCollector(doc))
+                {
+                    wallTagType = tagCollector2.OfClass(typeof(FamilySymbol))
+                                             .WhereElementIsElementType()
+                                             .Where(e => e.Category != null &&
+                                                    e.Category.Id.GetIntValue() == (int)BuiltInCategory.OST_MultiCategoryTags)
+                                             .Cast<FamilySymbol>()
+                                             .FirstOrDefault();
+                }
             }
 
             return wallTagType;

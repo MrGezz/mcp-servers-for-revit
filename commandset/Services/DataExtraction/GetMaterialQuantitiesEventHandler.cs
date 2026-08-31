@@ -1,9 +1,10 @@
+using RevitMCPCommandSet.Utils;
 using RevitMCPCommandSet.Models.DataExtraction;
 using RevitMCPSDK.API.Interfaces;
 
 namespace RevitMCPCommandSet.Services.DataExtraction
 {
-    public class GetMaterialQuantitiesEventHandler : IExternalEventHandler, IWaitableExternalEventHandler
+    public class GetMaterialQuantitiesEventHandler : WaitableEventHandlerBase, IExternalEventHandler, IWaitableExternalEventHandler
     {
         private List<string> _categoryFilters;
         private bool _selectedElementsOnly;
@@ -11,7 +12,6 @@ namespace RevitMCPCommandSet.Services.DataExtraction
 
         public GetMaterialQuantitiesResult ResultInfo { get; private set; }
         public bool TaskCompleted { get; private set; }
-        private readonly ManualResetEvent _resetEvent = new ManualResetEvent(false);
 
         public void SetParameters(List<string> categoryFilters = null, bool selectedElementsOnly = false, bool includeElementIds = false)
         {
@@ -24,7 +24,6 @@ namespace RevitMCPCommandSet.Services.DataExtraction
 
         public bool WaitForCompletion(int timeoutMilliseconds = 10000)
         {
-            _resetEvent.Reset();
         return _resetEvent.WaitOne(timeoutMilliseconds);
         }
 
@@ -47,28 +46,29 @@ namespace RevitMCPCommandSet.Services.DataExtraction
                 }
                 else
                 {
-                    var collector = new FilteredElementCollector(doc)
-                        .WhereElementIsNotElementType();
-
-                    // Apply category filters if specified
-                    if (_categoryFilters != null && _categoryFilters.Count > 0)
+                    using (var collector = new FilteredElementCollector(doc)
+                        .WhereElementIsNotElementType())
                     {
-                        var builtInCategories = new List<BuiltInCategory>();
-                        foreach (var catName in _categoryFilters)
+                        // Apply category filters if specified
+                        if (_categoryFilters != null && _categoryFilters.Count > 0)
                         {
-                            if (Enum.TryParse(catName, out BuiltInCategory cat))
+                            var builtInCategories = new List<BuiltInCategory>();
+                            foreach (var catName in _categoryFilters)
                             {
-                                builtInCategories.Add(cat);
+                                if (Enum.TryParse(catName, out BuiltInCategory cat))
+                                {
+                                    builtInCategories.Add(cat);
+                                }
+                            }
+                            if (builtInCategories.Count > 0)
+                            {
+                                var filter = new ElementMulticategoryFilter(builtInCategories);
+                                collector.WherePasses(filter);
                             }
                         }
-                        if (builtInCategories.Count > 0)
-                        {
-                            var filter = new ElementMulticategoryFilter(builtInCategories);
-                            collector = collector.WherePasses(filter);
-                        }
-                    }
 
-                    elements = collector.ToElements();
+                        elements = collector.ToElements();
+                    }
                 }
 
                 // Process each element

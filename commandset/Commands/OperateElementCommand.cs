@@ -13,6 +13,14 @@ namespace RevitMCPCommandSet.Commands
 {
     public class OperateElementCommand : ExternalEventCommandBase
     {
+        // Instance-level, not static: ExternalEvent.Raise() already serialises
+        // EXECUTION on the Revit UI thread, so a static lock would serialise
+        // unrelated commands against each other for no benefit. What is
+        // unprotected is this command's SHARED HANDLER INSTANCE - the registry
+        // keeps one per command name - between SetParameters() and the handler
+        // reading those parameters on the UI thread.
+        private readonly object _executionLock = new object();
+
         private OperateElementEventHandler _handler => (OperateElementEventHandler)Handler;
 
         /// <summary>
@@ -31,31 +39,34 @@ namespace RevitMCPCommandSet.Commands
 
         public override object Execute(JObject parameters, string requestId)
         {
-            try
+            lock (_executionLock)
             {
-                OperationSetting data = new OperationSetting();
-                // Parse parameters
-                data = parameters["data"].ToObject<OperationSetting>();
-                if (data == null)
-                    throw new ArgumentNullException(nameof(data), "Input data from AI is null.");
-
-                // Set point-element parameters
-                _handler.SetParameters(data);
-
-                // Raise the external event and wait for completion
-                if (RaiseAndWaitForCompletion(10000))
+                try
                 {
-                    return _handler.Result;
+                    OperationSetting data = new OperationSetting();
+                    // Parse parameters
+                    data = parameters["data"].ToObject<OperationSetting>();
+                    if (data == null)
+                        throw new ArgumentNullException(nameof(data), "Input data from AI is null.");
+
+                    // Set point-element parameters
+                    _handler.SetParameters(data);
+
+                    // Raise the external event and wait for completion
+                    if (RaiseAndWaitForCompletion(10000))
+                    {
+                        return _handler.Result;
+                    }
+                    else
+                    {
+                        throw new TimeoutException("Operate element timed out.");
+                    }
                 }
-                else
+                catch (Exception ex)
                 {
-                    throw new TimeoutException("Operate element timed out.");
+                    throw new Exception($"Operate element failed: {ex.Message}");
                 }
-            }
-            catch (Exception ex)
-            {
-                throw new Exception($"Operate element failed: {ex.Message}");
-            }
+                    }
         }
     }
 }

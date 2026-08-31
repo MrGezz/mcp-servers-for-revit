@@ -7,6 +7,14 @@ namespace RevitMCPCommandSet.Commands.Views
 {
     public class CreateCalloutCommand : ExternalEventCommandBase
     {
+        // Instance-level, not static: ExternalEvent.Raise() already serialises
+        // EXECUTION on the Revit UI thread, so a static lock would serialise
+        // unrelated commands against each other for no benefit. What is
+        // unprotected is this command's SHARED HANDLER INSTANCE - the registry
+        // keeps one per command name - between SetParameters() and the handler
+        // reading those parameters on the UI thread.
+        private readonly object _executionLock = new object();
+
         private CreateCalloutEventHandler _handler => (CreateCalloutEventHandler)Handler;
 
         public override string CommandName => "create_callout";
@@ -18,28 +26,31 @@ namespace RevitMCPCommandSet.Commands.Views
 
         public override object Execute(JObject parameters, string requestId)
         {
-            try
+            lock (_executionLock)
             {
-                string name = parameters["name"]?.Value<string>();
-                int hostViewId = parameters["hostViewId"]?.Value<int>() ?? 0;
-                JObject bbox = parameters["boundingBox"] as JObject;
+                try
+                {
+                    string name = parameters["name"]?.Value<string>();
+                    int hostViewId = parameters["hostViewId"]?.Value<int>() ?? 0;
+                    JObject bbox = parameters["boundingBox"] as JObject;
 
-                double minX = bbox?["minX"]?.Value<double>() ?? 0;
-                double minY = bbox?["minY"]?.Value<double>() ?? 0;
-                double maxX = bbox?["maxX"]?.Value<double>() ?? 10;
-                double maxY = bbox?["maxY"]?.Value<double>() ?? 10;
+                    double minX = bbox?["minX"]?.Value<double>() ?? 0;
+                    double minY = bbox?["minY"]?.Value<double>() ?? 0;
+                    double maxX = bbox?["maxX"]?.Value<double>() ?? 10;
+                    double maxY = bbox?["maxY"]?.Value<double>() ?? 10;
 
-                _handler.SetParameters(name, hostViewId, minX, minY, maxX, maxY);
+                    _handler.SetParameters(name, hostViewId, minX, minY, maxX, maxY);
 
-                if (RaiseAndWaitForCompletion(10000))
-                    return _handler.Result;
-                else
-                    throw new TimeoutException("Create callout operation timed out");
-            }
-            catch (Exception ex)
-            {
-                throw new Exception($"Failed to create callout: {ex.Message}");
-            }
+                    if (RaiseAndWaitForCompletion(10000))
+                        return _handler.Result;
+                    else
+                        throw new TimeoutException("Create callout operation timed out");
+                }
+                catch (Exception ex)
+                {
+                    throw new Exception($"Failed to create callout: {ex.Message}");
+                }
+                    }
         }
     }
 }

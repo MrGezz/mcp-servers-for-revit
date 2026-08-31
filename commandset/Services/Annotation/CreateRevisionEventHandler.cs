@@ -1,14 +1,14 @@
+using RevitMCPCommandSet.Utils;
 using RevitMCPSDK.API.Interfaces;
 
 namespace RevitMCPCommandSet.Services.Annotation
 {
-    public class CreateRevisionEventHandler : IExternalEventHandler, IWaitableExternalEventHandler
+    public class CreateRevisionEventHandler : WaitableEventHandlerBase, IExternalEventHandler, IWaitableExternalEventHandler
     {
         private UIApplication uiApp;
         private UIDocument uiDoc => uiApp.ActiveUIDocument;
         private Document doc => uiDoc.Document;
 
-        private readonly ManualResetEvent _resetEvent = new ManualResetEvent(false);
 
         public string RevisionName { get; private set; }
         public string RevisionDate { get; private set; }
@@ -48,9 +48,35 @@ namespace RevitMCPCommandSet.Services.Annotation
                         revision.RevisionDate = RevisionDate;
                     }
 
+                    // Defect 35. SetRevisionNumber throws InvalidOperationException
+                    // ("The parameter is read-only.") whenever the project's revision
+                    // sequence uses AUTOMATIC numbering, which is the default. That
+                    // exception used to escape to the outer catch, roll this
+                    // transaction back, and leave NO REVISION CREATED AT ALL - the
+                    // caller lost the whole operation over an optional field.
+                    //
+                    // Revision.NumberType does NOT exist on this API span: Revit 2026
+                    // exposes RevisionNumber and RevisionNumberingSequenceId, and
+                    // numbering is owned by the sequence, not the revision. So the
+                    // number cannot be forced from here without reconfiguring a
+                    // project-wide sequence, which is not this command's business.
+                    // The revision is created either way and the caller is told
+                    // plainly when the number could not be applied.
+                    string numberNote = null;
                     if (!string.IsNullOrEmpty(RevisionNumber))
                     {
-                        revision.SetRevisionNumber(RevisionNumber);
+                        try
+                        {
+                            revision.SetRevisionNumber(RevisionNumber);
+                        }
+                        catch (Autodesk.Revit.Exceptions.InvalidOperationException)
+                        {
+                            numberNote = $" (the number '{RevisionNumber}' was not applied: this project's revision sequence numbers revisions automatically)";
+                        }
+                        catch (InvalidOperationException)
+                        {
+                            numberNote = $" (the number '{RevisionNumber}' was not applied: this project's revision sequence numbers revisions automatically)";
+                        }
                     }
 
                     if (!string.IsNullOrEmpty(RevisionDescription) && string.IsNullOrEmpty(RevisionName))
@@ -65,7 +91,7 @@ namespace RevitMCPCommandSet.Services.Annotation
                     Result = new AIResult<int>
                     {
                         Success = true,
-                        Message = $"Revision '{revision.Description}' created successfully",
+                        Message = $"Revision '{revision.Description}' created successfully{numberNote}",
                         Response = revisionId
                     };
                 }
@@ -86,7 +112,6 @@ namespace RevitMCPCommandSet.Services.Annotation
 
         public bool WaitForCompletion(int timeoutMilliseconds = 10000)
         {
-            _resetEvent.Reset();
             return _resetEvent.WaitOne(timeoutMilliseconds);
         }
 

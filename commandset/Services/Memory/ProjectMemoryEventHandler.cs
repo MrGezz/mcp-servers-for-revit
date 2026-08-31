@@ -1,3 +1,4 @@
+using RevitMCPCommandSet.Utils;
 using Newtonsoft.Json.Linq;
 using RevitMCPSDK.API.Interfaces;
 
@@ -7,12 +8,11 @@ namespace RevitMCPCommandSet.Services.Memory
     /// Reads and writes the model-scoped memory graph. Writes go through an
     /// ExternalEvent and an owning transaction, as every document write must.
     /// </summary>
-    public class ProjectMemoryEventHandler : IExternalEventHandler, IWaitableExternalEventHandler
+    public class ProjectMemoryEventHandler : WaitableEventHandlerBase, IExternalEventHandler, IWaitableExternalEventHandler
     {
         private UIApplication _uiApp;
         private Document _doc => _uiApp.ActiveUIDocument.Document;
 
-        private readonly ManualResetEvent _resetEvent = new ManualResetEvent(false);
 
         public string Action { get; private set; }
         public JObject Payload { get; private set; }

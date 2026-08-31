@@ -1,15 +1,15 @@
-﻿using Newtonsoft.Json.Linq;
+﻿using RevitMCPCommandSet.Utils;
+using Newtonsoft.Json.Linq;
 using RevitMCPSDK.API.Interfaces;
 
 namespace RevitMCPCommandSet.Services.Annotation
 {
-    public class CreateRevisionCloudEventHandler : IExternalEventHandler, IWaitableExternalEventHandler
+    public class CreateRevisionCloudEventHandler : WaitableEventHandlerBase, IExternalEventHandler, IWaitableExternalEventHandler
     {
         private UIApplication uiApp;
         private UIDocument uiDoc => uiApp.ActiveUIDocument;
         private Document doc => uiDoc.Document;
 
-        private readonly ManualResetEvent _resetEvent = new ManualResetEvent(false);
 
         public int RevisionId { get; private set; }
         public int ViewId { get; private set; }
@@ -93,7 +93,6 @@ namespace RevitMCPCommandSet.Services.Annotation
 
         public bool WaitForCompletion(int timeoutMilliseconds = 10000)
         {
-            _resetEvent.Reset();
             return _resetEvent.WaitOne(timeoutMilliseconds);
         }
 

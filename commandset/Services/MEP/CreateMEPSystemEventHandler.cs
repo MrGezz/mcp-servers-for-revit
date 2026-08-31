@@ -1,18 +1,18 @@
 ﻿using Autodesk.Revit.DB.Mechanical;
 using Autodesk.Revit.DB.Plumbing;
+using RevitMCPCommandSet.Utils;
 using RevitMCPCommandSet.Models.MEP;
 using RevitMCPSDK.API.Interfaces;
 
 namespace RevitMCPCommandSet.Services.MEP
 {
-  public class CreateMEPSystemEventHandler : IExternalEventHandler, IWaitableExternalEventHandler
+  public class CreateMEPSystemEventHandler : WaitableEventHandlerBase, IExternalEventHandler, IWaitableExternalEventHandler
   {
     private UIApplication uiApp;
     private UIDocument uiDoc => uiApp.ActiveUIDocument;
     private Document doc => uiDoc.Document;
     private Autodesk.Revit.ApplicationServices.Application app => uiApp.Application;
 
-    private readonly ManualResetEvent _resetEvent = new ManualResetEvent(false);
 
     public List<MEPSystemCreationInfo> CreatedInfo { get; private set; }
 
@@ -130,34 +130,50 @@ namespace RevitMCPCommandSet.Services.MEP
         case "returnair":
         case "exhaustair":
         {
-          var mechType = new FilteredElementCollector(doc)
-              .OfClass(typeof(MechanicalSystemType))
-              .Cast<MechanicalSystemType>()
-              .FirstOrDefault(st => st.Name.Equals(systemType, StringComparison.OrdinalIgnoreCase));
+          MechanicalSystemType mechType;
+          using (var fec = new FilteredElementCollector(doc))
+          {
+            mechType = fec
+                .OfClass(typeof(MechanicalSystemType))
+                .Cast<MechanicalSystemType>()
+                .FirstOrDefault(st => st.Name.Equals(systemType, StringComparison.OrdinalIgnoreCase));
+          }
           if (mechType != null)
             return mechType.Id;
           // Fallback: first available mechanical system type
-          var firstMech = new FilteredElementCollector(doc)
-              .OfClass(typeof(MechanicalSystemType))
-              .Cast<MechanicalSystemType>()
-              .FirstOrDefault();
+          MechanicalSystemType firstMech;
+          using (var fec = new FilteredElementCollector(doc))
+          {
+            firstMech = fec
+                .OfClass(typeof(MechanicalSystemType))
+                .Cast<MechanicalSystemType>()
+                .FirstOrDefault();
+          }
           return firstMech?.Id ?? ElementId.InvalidElementId;
         }
         case "sanitary":
         case "hydronicsupply":
         case "hydronicreturn":
         {
-          var pipeType = new FilteredElementCollector(doc)
-              .OfClass(typeof(PipingSystemType))
-              .Cast<PipingSystemType>()
-              .FirstOrDefault(st => st.Name.Equals(systemType, StringComparison.OrdinalIgnoreCase));
+          PipingSystemType pipeType;
+          using (var fec = new FilteredElementCollector(doc))
+          {
+            pipeType = fec
+                .OfClass(typeof(PipingSystemType))
+                .Cast<PipingSystemType>()
+                .FirstOrDefault(st => st.Name.Equals(systemType, StringComparison.OrdinalIgnoreCase));
+          }
           if (pipeType != null)
             return pipeType.Id;
           // Fallback: first available piping system type
-          var firstPipe = new FilteredElementCollector(doc)
-              .OfClass(typeof(PipingSystemType))
-              .Cast<PipingSystemType>()
-              .FirstOrDefault();
+          PipingSystemType firstPipe;
+          using (var fec = new FilteredElementCollector(doc))
+          {
+            firstPipe = fec
+                .OfClass(typeof(PipingSystemType))
+                .Cast<PipingSystemType>()
+                .FirstOrDefault();
+          }
           return firstPipe?.Id ?? ElementId.InvalidElementId;
         }
         default:
@@ -167,7 +183,6 @@ namespace RevitMCPCommandSet.Services.MEP
 
     public bool WaitForCompletion(int timeoutMilliseconds = 15000)
     {
-      _resetEvent.Reset();
       return _resetEvent.WaitOne(timeoutMilliseconds);
     }
 
