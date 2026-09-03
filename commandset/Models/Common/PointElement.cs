@@ -7,11 +7,6 @@ namespace RevitMCPCommandSet.Models.Common;
 /// </summary>
 public class PointElement
 {
-    public PointElement()
-    {
-        Parameters = new Dictionary<string, double>();
-    }
-
     /// <summary>
     ///     Element category.
     /// </summary>
@@ -78,9 +73,4 @@ public class PointElement
     [JsonProperty("facingFlipped")]
     public bool FacingFlipped { get; set; } = false;
 
-    /// <summary>
-    ///     Parametric properties.
-    /// </summary>
-    [JsonProperty("parameters")]
-    public Dictionary<string, double> Parameters { get; set; }
 }

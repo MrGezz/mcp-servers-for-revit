@@ -138,7 +138,10 @@ namespace RevitMCPCommandSet.Services.Views
                     }
                 }
 
-                string message = $"Successfully created {scheduleIds.Count} schedule(s).";
+                bool created = scheduleIds.Count > 0;
+                string message = created
+                    ? $"Successfully created {scheduleIds.Count} schedule(s)."
+                    : "Nothing was created.";
                 if (_warnings.Count > 0)
                 {
                     message += "\n\nWarnings:\n  - " + string.Join("\n  - ", _warnings);
@@ -146,7 +149,7 @@ namespace RevitMCPCommandSet.Services.Views
 
                 Result = new AIResult<List<int>>
                 {
-                    Success = true,
+                    Success = created,
                     Message = message,
                     Response = scheduleIds,
                 };

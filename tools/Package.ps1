@@ -321,17 +321,36 @@ $('=' * (25 + $Version.Length))
 
 Connect AI assistants to Autodesk Revit over the Model Context Protocol.
 
+THIS IS THE MrGezz FORK. Its install steps differ from the original
+project's: it ships its own MCP server, the Revit socket starts with Revit,
+and a lean tool set is loaded by default. Follow this file and the fork's
+README rather than the original project's instructions.
+
+    Fork (source, README, issues)  https://github.com/MrGezz/mcp-servers-for-revit
+    Releases                       https://github.com/MrGezz/mcp-servers-for-revit/releases
+    Original project               https://github.com/mcp-servers-for-revit/mcp-servers-for-revit
+
 WHAT IS IN HERE
-    One folder per Revit version. Use the one matching your Revit.
+    Revit<year>\                  the add-in, one deployable tree per Revit
+                                  version (in the ZIP payload; Setup.exe has
+                                  already copied it into Revit's Addins folder)
+    server\                       the MCP server that matches this add-in
+    tools\Set-RevitMcpTarget.ps1  registers that server with Claude Desktop
+                                  and Claude Code
 
-INSTALL (manual)
-    1. Copy the CONTENTS of Revit<year>\ into:
-           %AppData%\Autodesk\Revit\Addins\<year>\
-       You should end up with:
-           Addins\<year>\mcp-servers-for-revit.addin
-           Addins\<year>\revit_mcp_plugin\...
+IF YOU RAN Setup.exe
+    The add-in is in %AppData%\Autodesk\Revit\Addins\<year>\ and this folder
+    holds the server, the tools and the uninstaller. There is nothing else to
+    copy.
 
-    2. IF YOU DOWNLOADED THIS AS A ZIP, UNBLOCK IT FIRST.
+    1. Start Revit. If it asks about an unknown add-in, choose Always Load.
+    2. The MCP socket starts with Revit; no button needs pressing. The Revit
+       MCP Switch on the Add-Ins ribbon toggles it off and on, and Settings
+       chooses which commands are enabled (all of them, by default).
+    3. Go to MCP SERVER below and check the AI-client side.
+
+INSTALL BY HAND (from the ZIP payload)
+    1. IF YOU DOWNLOADED A ZIP, UNBLOCK IT FIRST.
        Windows marks files from a downloaded archive, and the .NET loader then
        refuses the DLL with "FileLoadException ... HRESULT 0x80131515", which
        Revit reports as "cannot run the external application".
@@ -342,30 +361,46 @@ INSTALL (manual)
        Already extracted? Run this in PowerShell:
            Get-ChildItem "`$env:AppData\Autodesk\Revit\Addins" -Recurse -Include *.dll,*.addin | Unblock-File
 
-    3. Start Revit. If it asks about an unknown add-in, choose Always Load.
+    2. Copy the CONTENTS of Revit<year>\ into:
+           %AppData%\Autodesk\Revit\Addins\<year>\
+       You should end up with:
+           Addins\<year>\mcp-servers-for-revit.addin
+           Addins\<year>\revit_mcp_plugin\...
 
-    4. Add-Ins ribbon > Revit MCP Switch to start the server, and Settings to
-       choose which commands are enabled.
+    3. Start Revit (Always Load if asked). The socket starts with Revit.
 
-    Or use the Setup.exe, which does all of the above and needs no unblocking.
+MCP SERVER (the other half)
+    Your AI client has to launch the MCP server that matches this add-in.
 
-MCP SERVER
-    The Revit side is only half of it. Your AI client has to be pointed at the
-    MCP server as well.
+    DO NOT use "npx -y mcp-server-for-revit" for this fork. That runs the
+    package the ORIGINAL project publishes on npm (1.0.0: 26 tools, no Dynamo,
+    older tool schemas). This fork does not publish to npm; its server is the
+    server\ folder beside this file.
 
-    The Setup.exe does this for you - tick "Register the MCP server" during
-    installation, with your AI client CLOSED. If you are installing from this
-    ZIP instead, register it yourself:
+    Setup.exe: tick "Register the MCP server" and, with Claude Desktop CLOSED,
+    the installer writes this entry into Claude Desktop's config and runs
+    "claude mcp add --scope user" for Claude Code:
 
-        claude mcp add --scope user mcp-server-for-revit -- cmd /c npx -y mcp-server-for-revit
+        "mcp-server-for-revit": {
+            "command": "node",
+            "args": ["C:\\Users\\<you>\\AppData\\Roaming\\mcp-servers-for-revit\\server\\build\\index.js"]
+        }
 
-    --scope user matters: the default scope is "local", which registers the
-    server only for the directory you ran the command in.
+    To do it later, or again (Claude Desktop closed):
+        powershell -ExecutionPolicy Bypass -File "%AppData%\mcp-servers-for-revit\tools\Set-RevitMcpTarget.ps1" -Apply -AddIfMissing -IncludeClaudeCode
 
-    Full instructions: https://github.com/mcp-servers-for-revit/mcp-servers-for-revit
+    ZIP payload: run the same script from this folder's tools\ (it points the
+    entry at this folder's server\build\index.js), or add the entry above by
+    hand with that path. For Claude Code alone:
+        claude mcp add --scope user mcp-server-for-revit -- node "<this folder>\server\build\index.js"
+
+    Restart the AI client and check its TOOL LIST. 14 core tools are loaded
+    by default; the model switches the rest on through the revit_tools tool.
+    For a client that does not refresh its tool list mid-session (Claude Code),
+    set REVIT_MCP_PROFILE=full on the server entry.
 
 REQUIREMENTS
-    Windows, Autodesk Revit 2020-2027, and Node.js 18+ for the MCP server.
+    Windows, Autodesk Revit 2020-2027, and Node.js 20+ for the MCP server.
 "@
 
 Set-Content -Path (Join-Path $stage 'READ ME FIRST.txt') -Value $readme -Encoding UTF8
@@ -392,3 +427,8 @@ Write-Host "Staged $($summary.Count) Revit version(s), $totalMb MB total, at:" -
 Write-Host "  $stage" -ForegroundColor Green
 Write-Host ''
 Note 'Next: tools\Make-Installer.ps1 turns this into a single Setup.exe.'
+
+# The last native call above is the NON-FATAL devDependency restore, and a
+# caller that reads $LASTEXITCODE would otherwise inherit npm's verdict for a
+# package that succeeded. Every real failure threw already; this is success.
+exit 0

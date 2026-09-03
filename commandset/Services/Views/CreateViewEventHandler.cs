@@ -129,7 +129,10 @@ namespace RevitMCPCommandSet.Services.Views
                     }
                 }
 
-                string message = $"Successfully created {viewIds.Count} view(s).";
+                bool created = viewIds.Count > 0;
+                string message = created
+                    ? $"Successfully created {viewIds.Count} view(s)."
+                    : "Nothing was created.";
                 if (_warnings.Count > 0)
                 {
                     message += "\n\nWarnings:\n  - " + string.Join("\n  - ", _warnings);
@@ -137,7 +140,7 @@ namespace RevitMCPCommandSet.Services.Views
 
                 Result = new AIResult<List<int>>
                 {
-                    Success = true,
+                    Success = created,
                     Message = message,
                     Response = viewIds,
                 };
@@ -165,7 +168,8 @@ namespace RevitMCPCommandSet.Services.Views
                 vft = collector
                     .OfClass(typeof(ViewFamilyType))
                     .Cast<ViewFamilyType>()
-                    .FirstOrDefault(vftype => vftype.ViewFamily == ViewFamily.ThreeDimensional);
+                    .FirstOrDefault(vftype => vftype.ViewFamily == ViewFamily.ThreeDimensional
+                        && (string.IsNullOrEmpty(info.ViewFamilyTypeName) || vftype.Name == info.ViewFamilyTypeName));
             }
 
             if (vft != null)
@@ -203,7 +207,8 @@ namespace RevitMCPCommandSet.Services.Views
                 vft = collector
                     .OfClass(typeof(ViewFamilyType))
                     .Cast<ViewFamilyType>()
-                    .FirstOrDefault(vftype => vftype.ViewFamily == viewFamily);
+                    .FirstOrDefault(vftype => vftype.ViewFamily == viewFamily
+                        && (string.IsNullOrEmpty(info.ViewFamilyTypeName) || vftype.Name == info.ViewFamilyTypeName));
             }
 
             if (vft == null)
@@ -248,7 +253,8 @@ namespace RevitMCPCommandSet.Services.Views
                 vft = collector
                     .OfClass(typeof(ViewFamilyType))
                     .Cast<ViewFamilyType>()
-                    .FirstOrDefault(vftype => vftype.ViewFamily == ViewFamily.Elevation);
+                    .FirstOrDefault(vftype => vftype.ViewFamily == ViewFamily.Elevation
+                        && (string.IsNullOrEmpty(info.ViewFamilyTypeName) || vftype.Name == info.ViewFamilyTypeName));
             }
 
             if (vft == null) return null;
@@ -259,25 +265,6 @@ namespace RevitMCPCommandSet.Services.Views
             if (marker != null)
             {
                 ViewSection elevationView = VersionCompat.CreateElevationView(doc, marker, level.Id, 0);
-
-                if (info.Direction != null)
-                {
-                    try
-                    {
-                        XYZ direction = new XYZ(
-                            (double)(info.Direction.GetType().GetProperty("x")?.GetValue(info.Direction) ?? 0),
-                            (double)(info.Direction.GetType().GetProperty("y")?.GetValue(info.Direction) ?? 1),
-                            (double)(info.Direction.GetType().GetProperty("z")?.GetValue(info.Direction) ?? 0)
-                        );
-
-                        if (direction.GetLength() > 0)
-                        {
-                            direction = direction.Normalize();
-                        }
-                    }
-                    catch { }
-                }
-
                 return elevationView;
             }
 
@@ -306,7 +293,8 @@ namespace RevitMCPCommandSet.Services.Views
                 vft = collector
                     .OfClass(typeof(ViewFamilyType))
                     .Cast<ViewFamilyType>()
-                    .FirstOrDefault(vftype => vftype.ViewFamily == ViewFamily.Section);
+                    .FirstOrDefault(vftype => vftype.ViewFamily == ViewFamily.Section
+                        && (string.IsNullOrEmpty(info.ViewFamilyTypeName) || vftype.Name == info.ViewFamilyTypeName));
             }
 
             if (vft == null) return null;
@@ -315,17 +303,32 @@ namespace RevitMCPCommandSet.Services.Views
             XYZ direction = new XYZ(0, 1, 0);
             if (info.Direction != null)
             {
-                try
-                {
-                    double dx = (double)(info.Direction.GetType().GetProperty("x")?.GetValue(info.Direction) ?? 0);
-                    double dy = (double)(info.Direction.GetType().GetProperty("y")?.GetValue(info.Direction) ?? 1);
-                    double dz = (double)(info.Direction.GetType().GetProperty("z")?.GetValue(info.Direction) ?? 0);
-                    XYZ dir = new XYZ(dx, dy, dz);
-                    if (dir.GetLength() > 1e-9)
-                        direction = dir.Normalize();
-                }
-                catch { }
+                double dx = info.Direction.X;
+                double dy = info.Direction.Y;
+                double dz = info.Direction.Z;
+                XYZ dir = new XYZ(dx, dy, dz);
+                if (dir.GetLength() > 1e-9)
+                    direction = dir.Normalize();
             }
+
+            // Build a proper rotational transform so the section box faces along direction.
+            XYZ basisZ = direction;
+            XYZ worldUp = XYZ.BasisZ;
+            XYZ basisX;
+            if (Math.Abs(basisZ.DotProduct(worldUp)) > 0.99)
+            {
+                basisX = XYZ.BasisX;
+            }
+            else
+            {
+                basisX = worldUp.CrossProduct(basisZ).Normalize();
+            }
+            XYZ basisY = basisZ.CrossProduct(basisX).Normalize();
+
+            Transform sectionTransform = Transform.CreateTranslation(origin);
+            sectionTransform.BasisX = basisX;
+            sectionTransform.BasisY = basisY;
+            sectionTransform.BasisZ = basisZ;
 
             XYZ boundingBoxMin = new XYZ(-50, -50, -50);
             XYZ boundingBoxMax = new XYZ(50, 50, 50);
@@ -333,7 +336,7 @@ namespace RevitMCPCommandSet.Services.Views
             {
                 Min = boundingBoxMin,
                 Max = boundingBoxMax,
-                Transform = Transform.CreateTranslation(origin)
+                Transform = sectionTransform
             };
 
             ViewSection sectionView = ViewSection.CreateSection(doc, vft.Id, sectionBox);
@@ -341,11 +344,11 @@ namespace RevitMCPCommandSet.Services.Views
             return sectionView;
         }
 
-        private Level FindLevel(double elevationMm)
+        private Level FindLevel(double? elevationMm)
         {
-            if (elevationMm <= 0) return null;
+            if (elevationMm == null) return null;
 
-            double elevationFt = elevationMm / 304.8;
+            double elevationFt = elevationMm.Value / 304.8;
 
             using (var collector = new FilteredElementCollector(doc))
             {

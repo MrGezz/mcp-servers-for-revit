@@ -63,10 +63,18 @@ namespace RevitMCPCommandSet.Services.Views
 
                     trans.Commit();
 
+                    // A partial batch is still a success with a shortfall in the message;
+                    // only an empty result is a failure (the contract every creator follows).
+                    bool created = curveIds.Count > 0;
+                    bool allSucceeded = curveIds.Count == Lines.Count;
                     Result = new AIResult<List<int>>
                     {
-                        Success = true,
-                        Message = $"Successfully created {curveIds.Count} detail curve(s)",
+                        Success = created,
+                        Message = !created
+                            ? "Nothing was created."
+                            : allSucceeded
+                                ? $"Successfully created {curveIds.Count} detail curve(s)"
+                                : $"Only {curveIds.Count} of {Lines.Count} detail curve(s) were created; {Lines.Count - curveIds.Count} failed silently",
                         Response = curveIds
                     };
                 }

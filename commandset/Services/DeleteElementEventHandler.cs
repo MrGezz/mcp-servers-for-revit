@@ -49,7 +49,10 @@ namespace RevitMCPCommandSet.Services
 
                 foreach (var idStr in ElementIds)
                 {
-                    if (int.TryParse(idStr, out int elementIdValue))
+                    // long, not int: Revit 2024+ ids exceed Int32 in large models, and an
+                    // id that fails to parse here was reported as "unparseable" and never
+                    // deleted while the caller had sent a perfectly valid number.
+                    if (long.TryParse(idStr, out long elementIdValue))
                     {
                         var elementId = ElementIdFactory.Create(elementIdValue);
                         if (doc.GetElement(elementId) != null)

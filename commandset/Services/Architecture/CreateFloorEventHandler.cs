@@ -35,7 +35,11 @@ namespace RevitMCPCommandSet.Services.Architecture
                 foreach (var info in FloorData)
                 {
                     Level level = FindNearestLevel(info.Level / 304.8);
-                    if (level == null) continue;
+                    if (level == null)
+                    {
+                        _warnings.Add($"No level found near elevation {info.Level}mm, skipping floor");
+                        continue;
+                    }
 
                     FloorType floorType = null;
                     if (info.TypeId > 0)
@@ -69,7 +73,11 @@ namespace RevitMCPCommandSet.Services.Architecture
                         }
                     }
 
-                    if (floorType == null) continue;
+                    if (floorType == null)
+                    {
+                        _warnings.Add("No floor type available in document, skipping floor");
+                        continue;
+                    }
 
                     using (Transaction tx = new Transaction(_doc, "Create Floor"))
                     {
@@ -80,7 +88,11 @@ namespace RevitMCPCommandSet.Services.Architecture
                             // Build boundary curve loop from boundary points
                             CurveLoop curveLoop = new CurveLoop();
                             var points = info.BoundaryPoints;
-                            if (points.Count < 3) continue;
+                            if (points.Count < 3)
+                            {
+                                _warnings.Add($"Floor boundary requires at least 3 points, got {points.Count}, skipping floor");
+                                continue;
+                            }
 
                             double elevationInFeet = info.Level / 304.8;
                             for (int i = 0; i < points.Count; i++)
@@ -108,6 +120,16 @@ namespace RevitMCPCommandSet.Services.Architecture
                                     }
                                 }
 
+                                // Set structural usage if requested
+                                if (info.IsStructural)
+                                {
+                                    Parameter structuralParam = floor.get_Parameter(BuiltInParameter.FLOOR_PARAM_IS_STRUCTURAL);
+                                    if (structuralParam != null && !structuralParam.IsReadOnly)
+                                    {
+                                        structuralParam.Set(1);
+                                    }
+                                }
+
                                 elementIds.Add(floor.Id.GetIntValue());
                             }
 
@@ -121,7 +143,10 @@ namespace RevitMCPCommandSet.Services.Architecture
                     }
                 }
 
-                string message = $"Successfully created {elementIds.Count} floor(s)";
+                bool totalFailure = FloorData.Count > 0 && elementIds.Count == 0;
+                string message = totalFailure
+                    ? $"Failed to create any of the {FloorData.Count} requested floor(s)"
+                    : $"Successfully created {elementIds.Count} of {FloorData.Count} floor(s)";
                 if (_warnings.Count > 0)
                 {
                     message += "\nWarnings:\n  " + string.Join("\n  ", _warnings);
@@ -129,7 +154,7 @@ namespace RevitMCPCommandSet.Services.Architecture
 
                 Result = new AIResult<List<int>>
                 {
-                    Success = true,
+                    Success = !totalFailure,
                     Message = message,
                     Response = elementIds
                 };

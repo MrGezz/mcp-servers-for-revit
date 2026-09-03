@@ -59,12 +59,20 @@ namespace RevitMCPCommandSet.Services.DataExtraction
                                 {
                                     builtInCategories.Add(cat);
                                 }
+                                else
+                                {
+                                    // Previously an unknown name was skipped, and when every
+                                    // name was unknown the filter vanished: the caller asked
+                                    // for "OST_Wall" and got the whole model's quantities
+                                    // labelled as a success.
+                                    string near = Enum.GetNames(typeof(BuiltInCategory))
+                                        .FirstOrDefault(n => n.IndexOf(catName.Replace("OST_", string.Empty), StringComparison.OrdinalIgnoreCase) >= 0);
+                                    throw new ArgumentException(
+                                        $"Unknown BuiltInCategory name '{catName}'." + (near != null ? $" Did you mean '{near}'?" : string.Empty));
+                                }
                             }
-                            if (builtInCategories.Count > 0)
-                            {
-                                var filter = new ElementMulticategoryFilter(builtInCategories);
-                                collector.WherePasses(filter);
-                            }
+                            var filter = new ElementMulticategoryFilter(builtInCategories);
+                            collector.WherePasses(filter);
                         }
 
                         elements = collector.ToElements();
@@ -93,9 +101,9 @@ namespace RevitMCPCommandSet.Services.DataExtraction
                             };
                         }
 
-                        // Get material area and volume for this element
-                        double area = element.GetMaterialArea(matId, false);
-                        double volume = element.GetMaterialVolume(matId);
+                        // Revit returns internal units (ft², ft³); the model promises metric.
+                        double area = element.GetMaterialArea(matId, false) * 0.09290304;
+                        double volume = element.GetMaterialVolume(matId) * 0.028316846592;
 
                         materialData[matId].Area += area;
                         materialData[matId].Volume += volume;
@@ -109,8 +117,13 @@ namespace RevitMCPCommandSet.Services.DataExtraction
                 }
 
                 var materials = materialData.Values.ToList();
-                double totalArea = materials.Sum(m => m.Area);
-                double totalVolume = materials.Sum(m => m.Volume);
+                foreach (var m in materials)
+                {
+                    m.Area = Math.Round(m.Area, 3);
+                    m.Volume = Math.Round(m.Volume, 3);
+                }
+                double totalArea = Math.Round(materials.Sum(m => m.Area), 3);
+                double totalVolume = Math.Round(materials.Sum(m => m.Volume), 3);
 
                 // Strip element ID lists when the caller has not opted in.
                 // ElementCount is preserved so per-material counts remain available.

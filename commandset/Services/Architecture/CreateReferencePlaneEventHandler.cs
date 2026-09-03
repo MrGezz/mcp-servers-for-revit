@@ -118,7 +118,10 @@ namespace RevitMCPCommandSet.Services.Architecture
                     }
                 }
 
-                string message = $"Successfully created {elementIds.Count} reference plane(s)";
+                bool created = elementIds.Count > 0;
+                string message = created
+                    ? $"Successfully created {elementIds.Count} reference plane(s)"
+                    : "Nothing was created.";
                 if (_warnings.Count > 0)
                 {
                     message += "\nWarnings:\n  " + string.Join("\n  ", _warnings);
@@ -126,7 +129,7 @@ namespace RevitMCPCommandSet.Services.Architecture
 
                 Result = new AIResult<List<int>>
                 {
-                    Success = true,
+                    Success = elementIds.Count > 0 || _warnings.Count == 0,
                     Message = message,
                     Response = elementIds
                 };

@@ -1,29 +1,23 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { withRevitConnection } from "../utils/ConnectionManager.js";
+import { callRevit } from "../utils/reply.js";
+import { Pt } from "../utils/schemas.js";
 
 export function registerCreateReferencePlaneTool(server: McpServer) {
   server.tool(
     "create_reference_plane",
-    "Create reference planes in the Revit model. Supports reference planes defined by start/end points, normal vector, and view. All units in mm.",
+    "Create reference planes in Revit (mm). ByLine needs bubbleEnd+freeEnd; ByNormal needs origin+normal; ByPoints needs 3+ points. Returns created plane ids.",
     {
       data: z.array(z.object({
-        startPoint: z.object({ x: z.number(), y: z.number(), z: z.number() }).describe("Start point of the reference plane in mm"),
-        endPoint: z.object({ x: z.number(), y: z.number(), z: z.number() }).describe("End point of the reference plane in mm"),
-        normal: z.object({ x: z.number(), y: z.number(), z: z.number() }).optional().describe("Normal vector of the reference plane"),
-        viewName: z.string().optional().describe("Name of the view in which the reference plane is visible"),
-      })).describe("Array of reference planes to create"),
+        creationMethod: z.enum(["ByLine", "ByNormal", "ByPoints"]).optional(),
+        bubbleEnd: Pt.optional(),
+        freeEnd: Pt.optional(),
+        origin: Pt.optional(),
+        normal: Pt.optional(),
+        points: z.array(Pt).optional(),
+        name: z.string().optional(),
+      })),
     },
-    async (args, extra) => {
-      const params = args;
-      try {
-        const response = await withRevitConnection(async (revitClient) => {
-          return await revitClient.sendCommand("create_reference_plane", params);
-        });
-        return { content: [{ type: "text", text: JSON.stringify(response, null, 2) }] };
-      } catch (error) {
-        return { content: [{ type: "text", text: `Create reference plane failed: ${error instanceof Error ? error.message : String(error)}` }] };
-      }
-    }
+    async (args) => callRevit("create_reference_plane", args)
   );
 }

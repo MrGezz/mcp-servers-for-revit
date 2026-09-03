@@ -1,68 +1,39 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { withRevitConnection } from "../utils/ConnectionManager.js";
+import { errorMessage, fail, fromRevit } from "../utils/reply.js";
+import { Limit } from "../utils/schemas.js";
+
+type ElementRow = { Id?: number; Properties?: Record<string, string> };
 
 export function registerGetCurrentViewElementsTool(server: McpServer) {
   server.tool(
     "get_current_view_elements",
-    "Get elements from the current active view in Revit. You can filter by model categories (like Walls, Floors) or annotation categories (like Dimensions, Text). Use includeHidden to show/hide invisible elements and limit to control the number of returned elements.",
+    "List elements visible in the active view: id, name, category, family/type names, location (LocationMm or StartMm/EndMm/LengthMm, millimetres) and Comments/Mark/Level. Filter by BuiltInCategory names (OST_Walls, OST_Doors, OST_Dimensions...). Returns the first `limit` records (default 30) plus the total count.",
     {
-      modelCategoryList: z
-        .array(z.string())
-        .optional()
-        .describe(
-          "List of Revit model category names (e.g., 'OST_Walls', 'OST_Doors', 'OST_Floors')"
-        ),
-      annotationCategoryList: z
-        .array(z.string())
-        .optional()
-        .describe(
-          "List of Revit annotation category names (e.g., 'OST_Dimensions', 'OST_WallTags', 'OST_TextNotes')"
-        ),
-      includeHidden: z
-        .boolean()
-        .optional()
-        .describe("Whether to include hidden elements in the results"),
-      limit: z
-        .number()
-        .optional()
-        .describe("Maximum number of elements to return"),
+      modelCategoryList: z.array(z.string()).optional().describe("Model categories, e.g. OST_Walls"),
+      annotationCategoryList: z.array(z.string()).optional().describe("Annotation categories, e.g. OST_TextNotes"),
+      includeHidden: z.boolean().optional().describe("Include elements hidden in the view"),
+      limit: Limit(30),
     },
-    async (args, extra) => {
-      const params = {
-        modelCategoryList: args.modelCategoryList || [],
-        annotationCategoryList: args.annotationCategoryList || [],
-        includeHidden: args.includeHidden || false,
-        limit: args.limit || 100,
-      };
-
+    async (args) => {
       try {
-        const response = await withRevitConnection(async (revitClient) => {
-          return await revitClient.sendCommand(
-            "get_current_view_elements",
-            params
-          );
-        });
+        const response = (await withRevitConnection(async (client) =>
+          client.sendCommand("get_current_view_elements", {
+            modelCategoryList: args.modelCategoryList ?? [],
+            annotationCategoryList: args.annotationCategoryList ?? [],
+            includeHidden: args.includeHidden ?? false,
+            limit: args.limit ?? 30,
+          })
+        )) as { Elements?: ElementRow[] } | null;
 
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(response, null, 2),
-            },
-          ],
-        };
+        // The handler repeats the id inside Properties as a string; one copy is enough.
+        for (const row of response?.Elements ?? []) {
+          if (row.Properties && row.Properties.ElementId === String(row.Id)) delete row.Properties.ElementId;
+        }
+        return fromRevit(response, "get_current_view_elements");
       } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `get current view elements failed: ${
-                error instanceof Error ? error.message : String(error)
-              }`,
-            },
-          ],
-        };
+        return fail(`get_current_view_elements failed: ${errorMessage(error)}`);
       }
     }
   );

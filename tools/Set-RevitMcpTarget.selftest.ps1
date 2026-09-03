@@ -84,7 +84,11 @@ function Run([string[]]$ArgList, [hashtable]$EnvVars = @{}) {
     $old = @{}
     foreach ($k in $EnvVars.Keys) { $old[$k] = [Environment]::GetEnvironmentVariable($k); [Environment]::SetEnvironmentVariable($k, $EnvVars[$k]) }
     try {
-        $out = & pwsh -NoProfile -File $Script @ArgList 2>&1 | Out-String
+        # PowerShell 7 is not guaranteed on a Windows machine (and was absent on the
+        # one this harness first ran on); Windows PowerShell 5.1 always is, and it
+        # is what the installer invokes, so it is the better default anyway.
+        $shell = if (Get-Command pwsh -ErrorAction SilentlyContinue) { 'pwsh' } else { 'powershell' }
+        $out = & $shell -NoProfile -ExecutionPolicy Bypass -File $Script @ArgList 2>&1 | Out-String
         return [pscustomobject]@{ Code = $LASTEXITCODE; Out = $out }
     } finally {
         foreach ($k in $old.Keys) { [Environment]::SetEnvironmentVariable($k, $old[$k]) }

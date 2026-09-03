@@ -33,6 +33,9 @@ namespace RevitMCPCommandSet.Commands.Access
                     _handler.FamilyNameFilter = familyNameFilter;
                     _handler.Limit = limit;
 
+                    // Without this reset the reply is the PREVIOUS query's types.
+                    _handler.ResetCompletion();
+
                     // Raise the external event and wait for completion, up to 15 seconds
                     if (RaiseAndWaitForCompletion(15000))
                     {

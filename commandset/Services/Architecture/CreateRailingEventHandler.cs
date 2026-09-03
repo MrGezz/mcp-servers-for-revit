@@ -36,7 +36,11 @@ namespace RevitMCPCommandSet.Services.Architecture
                 foreach (var info in RailingData)
                 {
                     Level level = FindNearestLevel(info.Level / 304.8);
-                    if (level == null) continue;
+                    if (level == null)
+                    {
+                        _warnings.Add("No levels found in document; railing skipped");
+                        continue;
+                    }
 
                     RailingType railingType = null;
                     if (info.TypeId > 0)
@@ -70,7 +74,11 @@ namespace RevitMCPCommandSet.Services.Architecture
                         }
                     }
 
-                    if (railingType == null) continue;
+                    if (railingType == null)
+                    {
+                        _warnings.Add("No railing types available in document; railing skipped");
+                        continue;
+                    }
 
                     using (Transaction tx = new Transaction(_doc, "Create Railing"))
                     {
@@ -93,7 +101,11 @@ namespace RevitMCPCommandSet.Services.Architecture
                                 pathLine = Line.CreateBound(start, end);
                             }
 
-                            if (pathLine == null) continue;
+                            if (pathLine == null)
+                            {
+                                _warnings.Add("No valid path defined for railing; railing skipped");
+                                continue;
+                            }
 
                             // Railing.Create takes CurveLoop in all supported Revit versions (2022+)
                             CurveLoop curveLoop = new CurveLoop();
@@ -127,18 +139,35 @@ namespace RevitMCPCommandSet.Services.Architecture
                     }
                 }
 
-                string message = $"Successfully created {elementIds.Count} railing(s)";
-                if (_warnings.Count > 0)
+                if (elementIds.Count == 0 && RailingData.Count > 0)
                 {
-                    message += "\nWarnings:\n  " + string.Join("\n  ", _warnings);
+                    string failMsg = "No railings were created.";
+                    if (_warnings.Count > 0)
+                        failMsg += " " + string.Join("; ", _warnings);
+                    else
+                        failMsg += " All railing definitions were skipped.";
+                    Result = new AIResult<List<int>>
+                    {
+                        Success = false,
+                        Message = failMsg,
+                        Response = elementIds
+                    };
                 }
-
-                Result = new AIResult<List<int>>
+                else
                 {
-                    Success = true,
-                    Message = message,
-                    Response = elementIds
-                };
+                    string message = $"Successfully created {elementIds.Count} railing(s)";
+                    if (_warnings.Count > 0)
+                    {
+                        message += "\nWarnings:\n  " + string.Join("\n  ", _warnings);
+                    }
+
+                    Result = new AIResult<List<int>>
+                    {
+                        Success = true,
+                        Message = message,
+                        Response = elementIds
+                    };
+                }
             }
             catch (Exception ex)
             {

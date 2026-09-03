@@ -8,8 +8,7 @@
     PUBLISHED package, not this working tree. Everything built here - the Dynamo
     channel, the 127.0.0.1 fix, every server-side change - is then unreachable,
     and a "live test" silently exercises someone else's code. That is exactly what
-    happened during the live bridge test on 2026-08-31; see
-    docs/live-bridge-test-2026-08-31.md.
+    happened during the live bridge test on 2026-08-31.
 
     Measured difference on that date: published build registered 26 tools, this
     repository's build registers 31. The five extra are the Dynamo tools.
@@ -41,7 +40,10 @@
     Desktop is up.
 
 .PARAMETER IncludeClaudeCode
-    Also patch %USERPROFILE%\.claude\settings.json (Claude Code's own config).
+    Also register the server with Claude Code, through its own CLI
+    ("claude mcp add --scope user"), which writes %USERPROFILE%\.claude.json.
+    Earlier versions patched %USERPROFILE%\.claude\settings.json, a file Claude
+    Code does not read for MCP servers, so the switch had no effect.
 
 .PARAMETER AddIfMissing
     Create the entry when a config has no `mcp-server-for-revit` key yet, instead
@@ -199,20 +201,17 @@ if ($isLive) {
             $targets.Add([pscustomobject]@{ Path = $c; Kind = 'Claude Desktop' })
         }
     }
-    if ($IncludeClaudeCode) {
-        $cc = Join-Path $env:USERPROFILE '.claude\settings.json'
-        if (Test-Path -LiteralPath $cc -PathType Leaf) {
-            $targets.Add([pscustomobject]@{ Path = $cc; Kind = 'Claude Code' })
-        }
-    }
 } else {
     $targets.Add([pscustomobject]@{ Path = $ConfigPath; Kind = 'explicit' })
 }
 
 Write-Head "Configuration files"
-if ($targets.Count -eq 0) {
+if ($targets.Count -eq 0 -and -not ($isLive -and $IncludeClaudeCode)) {
     Write-Bad "no configuration file found"
     exit 2
+}
+if ($targets.Count -eq 0) {
+    Write-Info "no Claude Desktop config found - only Claude Code will be configured"
 }
 foreach ($t in $targets) { Write-Info "$($t.Kind.PadRight(15)) $($t.Path)" }
 
@@ -385,12 +384,67 @@ foreach ($t in $targets) {
     $changed++
 }
 
+# --- Claude Code --------------------------------------------------------------
+#
+# Claude Code keeps user-scope MCP servers in %USERPROFILE%\.claude.json under
+# a top-level "mcpServers" key (code.claude.com/docs/en/mcp, "Find your
+# configuration on disk"). It does NOT read them from .claude\settings.json,
+# which is where this script wrote until 1.0.2 - so -IncludeClaudeCode never
+# took effect. That file is also Claude Code's live state store, and Windows
+# PowerShell 5.1's ConvertFrom-Json turns its ISO timestamps into DateTime
+# values that ConvertTo-Json writes back as "\/Date(...)\/", so round-tripping
+# it here would corrupt it. Claude Code's own CLI does the write instead.
+#
+# Measured under PowerShell 5.1 with the npm claude.cmd shim: a literal "--"
+# passes through to the CLI, "-y" survives, and a path with spaces arrives as
+# one argument. "claude mcp add" refuses a name that already exists, hence the
+# remove first; a missing entry there is not an error.
+$claudeCodeState = 'not requested'
+if ($isLive -and $IncludeClaudeCode) {
+    Write-Head "Claude Code (claude mcp add --scope user)"
+    $cli = Get-Command claude -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $cli) {
+        foreach ($c in @((Join-Path $env:USERPROFILE '.local\bin\claude.exe'), (Join-Path $env:APPDATA 'npm\claude.cmd'))) {
+            if (Test-Path -LiteralPath $c -PathType Leaf) { $cli = Get-Command $c; break }
+        }
+    }
+    if ($Revert) { $ccArgs = @('cmd', '/c', 'npx', '-y', 'mcp-server-for-revit') } else { $ccArgs = @('node', $BuildEntry) }
+    $ccShown = ($ccArgs | ForEach-Object { if ($_ -match '\s') { '"' + $_ + '"' } else { $_ } }) -join ' '
+    $ccCmd   = "claude mcp add --scope user $ENTRY_KEY -- $ccShown"
+
+    if (-not $cli) {
+        $claudeCodeState = 'skipped (claude CLI not found)'
+        Write-Warn "the 'claude' CLI was not found - Claude Code was not configured"
+        Write-Info "once Claude Code is installed, run:  $ccCmd"
+    } elseif (-not $Apply) {
+        $claudeCodeState = 'dry run'
+        Write-Info "cli     : $($cli.Source)"
+        Write-Warn "DRY RUN - would run:  $ccCmd"
+    } else {
+        Write-Info "cli     : $($cli.Source)"
+        $prevEap = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+        & $cli.Source mcp remove --scope user $ENTRY_KEY 2>&1 | Out-Null
+        $ccOut  = & $cli.Source mcp add --scope user $ENTRY_KEY -- @ccArgs 2>&1 | ForEach-Object { "$_" }
+        $ccExit = $LASTEXITCODE
+        $ErrorActionPreference = $prevEap
+        if ($ccExit -eq 0) {
+            $claudeCodeState = 'registered'
+            Write-Ok "registered with Claude Code (user scope): $ccShown"
+        } else {
+            $claudeCodeState = "FAILED (exit $ccExit)"
+            Write-Bad ("claude mcp add failed (exit $ccExit): " + (($ccOut | Select-Object -Last 2) -join ' '))
+            Write-Info "run it by hand:  $ccCmd"
+        }
+    }
+}
+
 # --- summary ------------------------------------------------------------------
 
 Write-Head "Summary"
 Write-Info "configs examined : $($targets.Count)"
 Write-Info "changed          : $changed"
 Write-Info "skipped          : $skipped"
+Write-Info "Claude Code      : $claudeCodeState"
 
 if ($script:Fail -gt 0) {
     Write-Host ''
@@ -404,14 +458,14 @@ if (-not $Apply -and $changed -gt 0) {
     exit 0
 }
 
-if ($Apply -and $changed -gt 0) {
+if ($Apply -and ($changed -gt 0 -or $claudeCodeState -eq 'registered')) {
     Write-Host ''
-    Write-Host 'Restart Claude Desktop, then confirm by the TOOL LIST, not the file:' -ForegroundColor Cyan
+    Write-Host 'Restart Claude Desktop and Claude Code, then confirm by the TOOL LIST, not the file:' -ForegroundColor Cyan
     if ($Revert) {
         Write-Host '  expect 26 tools and no dynamo_* tools (published package).' -ForegroundColor Cyan
     } else {
-        Write-Host '  expect dynamo_status / dynamo_list_graphs / dynamo_read_graph /' -ForegroundColor Cyan
-        Write-Host '  dynamo_edit_graph / dynamo_run_graph to be present.' -ForegroundColor Cyan
+        Write-Host '  expect revit_tools, dynamo_status and dynamo_run_graph to be present' -ForegroundColor Cyan
+        Write-Host '  (14 tools by default; revit_tools {action:"list"} shows the rest).' -ForegroundColor Cyan
         Write-Host '  If they are absent, the edit did not survive - the application was up.' -ForegroundColor Cyan
     }
 }

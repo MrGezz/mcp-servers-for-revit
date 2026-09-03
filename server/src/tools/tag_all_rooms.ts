@@ -1,53 +1,26 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { withRevitConnection } from "../utils/ConnectionManager.js";
+import { callRevit } from "../utils/reply.js";
 
 export function registerTagAllRoomsTool(server: McpServer) {
   server.tool(
     "tag_all_rooms",
-    "Create tags for all rooms in the current active view. Tags will be placed at the center point of each room, displaying the room name and number.",
+    "Tags all rooms in the active or matching floor plan view at each room's center. Auto-switches to a floor plan view if needed; fails only when none exists for the rooms' level. Returns created tag ids.",
     {
       useLeader: z
         .boolean()
         .optional()
         .default(false)
-        .describe("Whether to use a leader line when creating the tags"),
+        .describe("Add a leader line to each tag"),
       tagTypeId: z
         .string()
         .optional()
-        .describe("The ID of the specific room tag family type to use. If not provided, the default room tag type will be used"),
+        .describe("Room tag family type ID; best-effort, falls back to first available if invalid"),
       roomIds: z
         .array(z.number())
         .optional()
-        .describe("Optional array of specific room element IDs to tag. If not provided, all rooms in the current view will be tagged"),
+        .describe("Room element IDs to tag; all rooms if omitted"),
     },
-    async (args, extra) => {
-      const params = args;
-      try {
-        const response = await withRevitConnection(async (revitClient) => {
-          return await revitClient.sendCommand("tag_rooms", params);
-        });
-
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(response, null, 2),
-            },
-          ],
-        };
-      } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Room tagging failed: ${
-                error instanceof Error ? error.message : String(error)
-              }`,
-            },
-          ],
-        };
-      }
-    }
+    async (args) => callRevit("tag_rooms", args)
   );
 }

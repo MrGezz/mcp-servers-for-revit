@@ -127,6 +127,7 @@ namespace RevitMCPCommandSet.Services
                                     });
                                 }
                             }
+                            else { errors.Add($"Wall {wall.Id.Value} has no LocationCurve and was skipped"); }
                         }
                         catch (Exception ex)
                         {
@@ -170,6 +171,7 @@ try
                                     });
                                 }
                             }
+                            else { errors.Add($"Wall {wall.Id.GetIntValue()} has no LocationCurve and was skipped"); }
                         }
                         catch (Exception ex)
                         {

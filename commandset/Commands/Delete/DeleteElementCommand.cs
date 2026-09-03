@@ -33,6 +33,9 @@ namespace RevitMCPCommandSet.Commands.Delete
                     // Set the array of element IDs to delete
                     _handler.ElementIds = elementIds;
 
+                    // Without this reset the reply describes the PREVIOUS deletion.
+                    _handler.ResetCompletion();
+
                     // Raise the external event and wait for completion
                     if (RaiseAndWaitForCompletion(15000))
                     {

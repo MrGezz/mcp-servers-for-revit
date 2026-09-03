@@ -67,6 +67,12 @@ namespace RevitMCPCommandSet.Services.Modify
                             renamed = true;
                         }
                     }
+                    if (!renamed)
+                    {
+                        trans.RollBack();
+                        Result = new AIResult<bool> { Success = false, Message = "Could not rename element: Name parameter is read-only and no type-specific rename is available." };
+                        return;
+                    }
                     trans.Commit();
                 }
                 Result = new AIResult<bool> { Success = true, Response = true };

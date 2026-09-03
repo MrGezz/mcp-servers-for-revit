@@ -67,9 +67,9 @@ namespace RevitMCPCommandSet.Services
                             {
                                 Result = new AIResult<bool>
                                 {
-                                    Success = true,
+                                    Success = false,
                                     Message = $"Family loaded from '{FilePath}' but specified family name '{FamilyName}' not found in project",
-                                    Response = true
+                                    Response = false
                                 };
                                 return;
                             }

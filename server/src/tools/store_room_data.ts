@@ -1,39 +1,33 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { memoryOp, projectId, roomId, toProps } from "../memory/legacyBridge.js";
+import { fromRevit, fail, errorMessage } from "../utils/reply.js";
 
 const RoomSchema = z.object({
-  room_id: z.string().describe("Unique identifier for the room (Revit Element ID)"),
-  room_name: z.string().optional().describe("Room name"),
-  room_number: z.string().optional().describe("Room number"),
-  department: z.string().optional().describe("Department"),
-  level: z.string().optional().describe("Level or floor"),
-  area: z.number().optional().describe("Room area"),
-  perimeter: z.number().optional().describe("Room perimeter"),
-  occupancy: z.string().optional().describe("Occupancy type"),
-  comments: z.string().optional().describe("Additional comments"),
-  metadata: z.record(z.string()).optional().describe("Additional room metadata as key-value pairs"),
+  room_id: z.string().describe("Revit Element ID for this room"),
+  room_name: z.string().optional(),
+  room_number: z.string().optional(),
+  department: z.string().optional(),
+  level: z.string().optional(),
+  area: z.number().optional(),
+  perimeter: z.number().optional(),
+  occupancy: z.string().optional(),
+  comments: z.string().optional(),
+  metadata: z.record(z.string()).optional().describe("Extra key-value pairs"),
 });
 
 export function registerStoreRoomDataTool(server: McpServer) {
   server.tool(
     "store_room_data",
-    "Store room data in the current Revit model, linked to its project. The data is written INTO the " +
-      "model via Extensible Storage, so it travels with the file. Each room becomes an entity and is " +
-      "linked to the project by a 'contains' relation, which is what makes " +
-      "query_stored_data able to answer 'which rooms belong to this project'.",
+    "Stores room entities and a project entity in Revit Extensible Storage (travels with the file). Rooms are linked to the project via 'contains' relations, making them queryable by project.",
     {
-      project_name: z.string().describe("The name of the Revit project this room belongs to"),
-      rooms: z.array(RoomSchema).describe("Array of room data to store"),
+      project_name: z.string().describe("Revit project this room belongs to"),
+      rooms: z.array(RoomSchema),
     },
-    async (args: any) => {
+    async (args) => {
       try {
         const pid = projectId(args.project_name);
 
-        // The project entity is written alongside the rooms. Without it the
-        // 'contains' relations would be dangling, and the graph would reject them -
-        // which is the correct behaviour, so the fix is to supply the endpoint
-        // rather than to relax the check.
         const entities: any[] = [
           { id: pid, kind: "project", name: args.project_name, props: {} },
         ];
@@ -52,21 +46,11 @@ export function registerStoreRoomDataTool(server: McpServer) {
         }
 
         const response = await memoryOp("write", { entities, relations });
-        return { content: [{ type: "text" as const, text: JSON.stringify(response, null, 2) }] };
+        return fromRevit(response);
       } catch (error) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text:
-                "store_room_data failed: " +
-                (error instanceof Error ? error.message : String(error)) +
-                "\n\nThis tool now writes into the open Revit model, so it needs a live connection " +
-                "and an open document.",
-            },
-          ],
-          isError: true as const,
-        };
+        return fail(`store_room_data failed: ${errorMessage(error)}`, {
+          hint: "Needs a live Revit connection and an open document.",
+        });
       }
     }
   );

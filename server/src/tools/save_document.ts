@@ -1,22 +1,11 @@
-import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { withRevitConnection } from "../utils/ConnectionManager.js";
+import { callRevit } from "../utils/reply.js";
 
 export function registerSaveDocumentTool(server: McpServer) {
   server.tool(
     "save_document",
-    "Save the current Revit document.",
+    "Saves the active Revit document to disk. No parameters required. Returns success or an error if the document cannot be saved.",
     {},
-    async (args, extra) => {
-      const params = {};
-      try {
-        const response = await withRevitConnection(async (revitClient) => {
-          return await revitClient.sendCommand("save_document", params);
-        });
-        return { content: [{ type: "text", text: JSON.stringify(response, null, 2) }] };
-      } catch (error) {
-        return { content: [{ type: "text", text: `Save document failed: ${error instanceof Error ? error.message : String(error)}` }] };
-      }
-    }
+    async () => callRevit("save_document", {})
   );
 }

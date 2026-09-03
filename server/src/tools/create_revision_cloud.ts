@@ -1,29 +1,20 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { withRevitConnection } from "../utils/ConnectionManager.js";
+import { callRevit } from "../utils/reply.js";
+import { ElementId } from "../utils/schemas.js";
 
 export function registerCreateRevisionCloudTool(server: McpServer) {
   server.tool(
     "create_revision_cloud",
-    "Create a revision cloud in a Revit view with boundary points. All coordinates in mm.",
+    "Creates a revision cloud on a view (mm). Needs an existing revision and view. Returns the new element id.",
     {
-      revisionId: z.number().int().describe("Revision ID to associate with"),
-      viewId: z.number().int().describe("View ID to place the cloud in"),
+      revisionId: ElementId.describe("Revision to associate with"),
+      viewId: ElementId.describe("View to place the cloud in"),
       points: z.array(z.object({
-        x: z.number().describe("X coordinate in mm"),
-        y: z.number().describe("Y coordinate in mm"),
-      })).describe("Boundary points of the revision cloud in mm"),
+        x: z.number(),
+        y: z.number(),
+      })).describe("Boundary points (mm)"),
     },
-    async (args, extra) => {
-      const params = args;
-      try {
-        const response = await withRevitConnection(async (revitClient) => {
-          return await revitClient.sendCommand("create_revision_cloud", params);
-        });
-        return { content: [{ type: "text", text: JSON.stringify(response, null, 2) }] };
-      } catch (error) {
-        return { content: [{ type: "text", text: `Create revision cloud failed: ${error instanceof Error ? error.message : String(error)}` }] };
-      }
-    }
+    async (args) => callRevit("create_revision_cloud", args)
   );
 }

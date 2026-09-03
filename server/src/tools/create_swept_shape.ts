@@ -1,31 +1,22 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { withRevitConnection } from "../utils/ConnectionManager.js";
+import { callRevit } from "../utils/reply.js";
+import { Pt } from "../utils/schemas.js";
 
 export function registerCreateSweptShapeTool(server: McpServer) {
   server.tool(
     "create_swept_shape",
-    "Create swept solid shapes along a path with configurable section profiles (rect, circle, horseshoe). All units in mm.",
+    "Create swept solid shapes along a path (mm). Supports Rect, Circle, and Horseshoe section profiles. Returns created element ids.",
     {
       data: z.array(z.object({
-        sectionType: z.enum(["Rect", "Circle", "Horseshoe"]).describe("Section profile type"),
-        width: z.number().optional().describe("Section width in mm (Rect/Horseshoe)"),
-        height: z.number().optional().describe("Section height in mm (Rect/Horseshoe)"),
-        radius: z.number().optional().describe("Section radius in mm (Circle)"),
-        pathPoints: z.array(z.object({ x: z.number(), y: z.number(), z: z.number() })).describe("Sweep path points in mm"),
-        category: z.string().optional().describe("Target category name"),
-      })).describe("Array of swept shapes to create"),
+        sectionType: z.enum(["Rect", "Circle", "Horseshoe"]),
+        width: z.number().optional().describe("Section width (Rect/Horseshoe)"),
+        height: z.number().optional().describe("Section height (Rect/Horseshoe)"),
+        radius: z.number().optional().describe("Circle section radius"),
+        pathPoints: z.array(Pt).describe("Sweep path points"),
+        category: z.string().optional().describe("Revit category name"),
+      })).describe("Swept shapes to create"),
     },
-    async (args, extra) => {
-      const params = args;
-      try {
-        const response = await withRevitConnection(async (revitClient) => {
-          return await revitClient.sendCommand("create_swept_shape", params);
-        });
-        return { content: [{ type: "text", text: JSON.stringify(response, null, 2) }] };
-      } catch (error) {
-        return { content: [{ type: "text", text: `Create swept shape failed: ${error instanceof Error ? error.message : String(error)}` }] };
-      }
-    }
+    async (args) => callRevit("create_swept_shape", args)
   );
 }

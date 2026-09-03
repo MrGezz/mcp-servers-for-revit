@@ -38,7 +38,7 @@ namespace RevitMCPCommandSet.Services.Query
                         Name = param.Definition?.Name ?? "Unknown",
                         Value = param.AsValueString() ?? param.AsString() ?? param.AsInteger().ToString(),
                         StorageType = param.StorageType.ToString(),
-                        HasValue = param.HasValue
+                        IsReadOnly = param.IsReadOnly
                     });
                 }
                 Result = new AIResult<List<object>> { Success = true, Response = parameters };

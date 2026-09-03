@@ -90,7 +90,7 @@ export class RevitClientConnection {
     }
   }
 
-  public sendCommand(command: string, params: any = {}): Promise<any> {
+  public sendCommand(command: string, params: any = {}, timeoutMs: number = 120000): Promise<any> {
     return new Promise((resolve, reject) => {
       try {
         if (!this.isConnected) {
@@ -136,9 +136,9 @@ export class RevitClientConnection {
         setTimeout(() => {
           if (this.responseCallbacks.has(requestId)) {
             this.responseCallbacks.delete(requestId);
-            reject(new Error(`Command timed out after 2 minutes: ${command}`));
+            reject(new Error(`Command timed out after ${Math.round(timeoutMs / 1000)}s: ${command}`));
           }
-        }, 120000); // 2-minute timeout
+        }, timeoutMs); // 2 minutes unless the caller knows better (Dynamo runs pass their own)
       } catch (error) {
         reject(error);
       }

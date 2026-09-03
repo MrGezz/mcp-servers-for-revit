@@ -2,28 +2,26 @@ import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { readGraph } from "../dynamo/DynGraph.js";
 import { summarize, renderSummary } from "../dynamo/summarize.js";
+import { ok, fail, errorMessage } from "../utils/reply.js";
 
 export function registerDynamoReadGraphTool(server: McpServer) {
   server.tool(
     "dynamo_read_graph",
-    "Read a Dynamo graph (.dyn) or custom node (.dyf) and explain what it does: every node with " +
-      "what feeds it and what it feeds, the Python and Code Block bodies in full, the Dynamo Player " +
-      "inputs, the package dependencies it needs to run, and any structural problems. " +
-      "Works entirely from the file — Revit does not need to be running.",
+    "Read a .dyn or .dyf file and return a summary: node graph, Python/Code Block bodies, Dynamo Player inputs, package dependencies, structural issues. No Revit connection needed.",
     {
       path: z.string().describe("Absolute path to the .dyn or .dyf file."),
       include_code: z
         .boolean()
         .optional()
-        .describe("Include Python and Code Block bodies. Default true; set false for a shorter structural overview."),
+        .describe("Include Python/Code Block bodies (default true)."),
       max_nodes: z
         .number()
         .optional()
-        .describe("Cap on how many nodes to detail. Default 200."),
+        .describe("Cap on nodes to detail (default 200)."),
       format: z
         .enum(["text", "json"])
         .optional()
-        .describe("'text' (default) is compact and readable; 'json' returns the full structured summary."),
+        .describe("'text' readable summary; 'json' full structure."),
     },
     async (args) => {
       try {
@@ -32,19 +30,12 @@ export function registerDynamoReadGraphTool(server: McpServer) {
 
         const body =
           args.format === "json"
-            ? JSON.stringify(summary, null, 2)
+            ? summary
             : renderSummary(summary, { maxNodes: args.max_nodes ?? 200 });
 
-        return { content: [{ type: "text", text: body }] };
+        return ok(body);
       } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `dynamo_read_graph failed: ${error instanceof Error ? error.message : String(error)}`,
-            },
-          ],
-        };
+        return fail(`dynamo_read_graph failed: ${errorMessage(error)}`);
       }
     }
   );

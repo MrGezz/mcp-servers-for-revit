@@ -1,95 +1,44 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { withRevitConnection } from "../utils/ConnectionManager.js";
+import { callRevit } from "../utils/reply.js";
 
 export function registerCreateViewTool(server: McpServer) {
   server.tool(
     "create_view",
-    "Create one or more views in Revit such as floor plans, ceiling plans, sections, elevations, or 3D views. Supports view type selection, level assignment, scale, detail level, and view template application. All units in millimeters (mm).",
+    "Create one or more views (floor plans, ceiling plans, sections, elevations, 3D) in the active project. levelElevation in mm. Returns created view ids.",
     {
       data: z
         .array(
           z.object({
-            name: z
-              .string()
-              .optional()
-              .describe("View name"),
+            name: z.string().optional(),
             viewType: z
               .string()
               .optional()
-              .describe(
-                "View type: FloorPlan, CeilingPlan, Elevation, Section, 3D"
-              ),
+              .describe("FloorPlan, CeilingPlan, Elevation, Section, 3D"),
             levelElevation: z
               .number()
               .optional()
-              .describe(
-                "Level elevation in mm (for plan/section/elevation views)"
-              ),
+              .describe("Level elevation in mm"),
             detailLevel: z
               .string()
               .optional()
-              .describe("Detail level: Coarse, Medium, Fine"),
-            scale: z
-              .number()
-              .optional()
-              .describe("View scale (e.g., 100 for 1:100)"),
-            viewFamilyTypeName: z
-              .string()
-              .optional()
-              .describe("View family type name"),
-            templateId: z
-              .string()
-              .optional()
-              .describe("Template view ID to apply"),
+              .describe("Coarse, Medium, or Fine"),
+            scale: z.number().optional(),
+            viewFamilyTypeName: z.string().optional(),
+            templateId: z.string().optional().describe("Template view ID"),
             direction: z
               .object({
-                x: z.number().optional().describe("X direction component"),
-                y: z.number().optional().describe("Y direction component"),
-                z: z.number().optional().describe("Z direction component"),
+                x: z.number().optional(),
+                y: z.number().optional(),
+                z: z.number().optional(),
               })
               .optional()
-              .describe(
-                "View direction for elevation/section views"
-              ),
-            parameters: z
-              .record(z.any())
-              .optional()
-              .describe(
-                "Additional view parameters"
-              ),
+              .describe("Section view facing direction (not used for elevations)"),
+            parameters: z.record(z.any()).optional(),
           })
         )
         .describe("Array of views to create"),
     },
-    async (args, extra) => {
-      const params = args;
-
-      try {
-        const response = await withRevitConnection(async (revitClient) => {
-          return await revitClient.sendCommand("create_view", params);
-        });
-
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(response, null, 2),
-            },
-          ],
-        };
-      } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Create view failed: ${
-                error instanceof Error ? error.message : String(error)
-              }`,
-            },
-          ],
-        };
-      }
-    }
+    async (args) => callRevit("create_view", args)
   );
 }

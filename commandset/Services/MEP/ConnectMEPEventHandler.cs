@@ -144,7 +144,7 @@ namespace RevitMCPCommandSet.Services.MEP
         }
         Result = new AIResult<List<string>>
         {
-          Success = true,
+          Success = results.Count > 0 || _warnings.Count == 0,
           Message = message,
           Response = results,
         };

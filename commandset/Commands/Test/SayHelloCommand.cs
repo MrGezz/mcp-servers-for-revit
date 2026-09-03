@@ -35,6 +35,8 @@ namespace RevitMCPCommandSet.Commands.Test
                     // until somebody dismisses it.
                     _handler.ShowDialog = parameters?["showDialog"]?.ToObject<bool>() ?? false;
 
+                    _handler.ResetCompletion();
+
                     if (RaiseAndWaitForCompletion(15000))
                     {
                         return new

@@ -33,7 +33,14 @@ namespace RevitMCPCommandSet.Services.Query
                 }
                 var options = new Options();
                 if (ViewId.HasValue)
+                {
                     options.View = Doc.GetElement(ElementIdFactory.Create(ViewId.Value)) as View;
+                    if (options.View == null)
+                    {
+                        Result = new AIResult<object> { Success = false, Message = $"ViewId {ViewId.Value} does not refer to a valid View element" };
+                        return;
+                    }
+                }
                 if (DetailLevel.HasValue)
                     options.DetailLevel = (ViewDetailLevel)DetailLevel.Value;
                 options.ComputeReferences = true;
@@ -43,8 +50,8 @@ namespace RevitMCPCommandSet.Services.Query
                 var boundingBox = element.get_BoundingBox(null);
                 var boundingBoxData = boundingBox != null ? new
                 {
-                    Min = new { X = boundingBox.Min.X, Y = boundingBox.Min.Y, Z = boundingBox.Min.Z },
-                    Max = new { X = boundingBox.Max.X, Y = boundingBox.Max.Y, Z = boundingBox.Max.Z }
+                    MinMm = new { X = boundingBox.Min.X * 304.8, Y = boundingBox.Min.Y * 304.8, Z = boundingBox.Min.Z * 304.8 },
+                    MaxMm = new { X = boundingBox.Max.X * 304.8, Y = boundingBox.Max.Y * 304.8, Z = boundingBox.Max.Z * 304.8 }
                 } : null;
 
                 if (geom != null)
@@ -82,15 +89,15 @@ namespace RevitMCPCommandSet.Services.Query
                     {
                         faceList.Add(new
                         {
-                            Area = face.Area,
+                            AreaM2 = face.Area * 0.09290304,
                             SurfaceType = VersionCompat.GetSurfaceTypeName(face),
                             EdgeCount = face.EdgeLoops.Size
                         });
                     }
                     solids.Add(new
                     {
-                        Volume = solid.Volume,
-                        SurfaceArea = solid.SurfaceArea,
+                        VolumeM3 = solid.Volume * 0.028316846592,
+                        SurfaceAreaM2 = solid.SurfaceArea * 0.09290304,
                         FaceCount = solid.Faces.Size,
                         Faces = faceList
                     });

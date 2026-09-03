@@ -36,7 +36,11 @@ namespace RevitMCPCommandSet.Services.Architecture
                 foreach (var info in ColumnData)
                 {
                     Level baseLevel = FindNearestLevel(info.BaseLevel / 304.8);
-                    if (baseLevel == null) continue;
+                    if (baseLevel == null)
+                    {
+                        _warnings.Add($"No level found near elevation {info.BaseLevel} mm for column entry, skipping");
+                        continue;
+                    }
 
                     FamilySymbol symbol = null;
                     if (info.TypeId > 0)
@@ -72,7 +76,11 @@ namespace RevitMCPCommandSet.Services.Architecture
                         }
                     }
 
-                    if (symbol == null) continue;
+                    if (symbol == null)
+                    {
+                        _warnings.Add($"No structural column family symbol found, skipping column entry");
+                        continue;
+                    }
 
                     if (!symbol.IsActive)
                     {
@@ -126,7 +134,10 @@ namespace RevitMCPCommandSet.Services.Architecture
                     }
                 }
 
-                string message = $"Successfully created {elementIds.Count} column(s)";
+                bool created = elementIds.Count > 0;
+                string message = created
+                    ? $"Successfully created {elementIds.Count} column(s)"
+                    : "Nothing was created.";
                 if (_warnings.Count > 0)
                 {
                     message += "\nWarnings:\n  " + string.Join("\n  ", _warnings);
@@ -134,7 +145,7 @@ namespace RevitMCPCommandSet.Services.Architecture
 
                 Result = new AIResult<List<int>>
                 {
-                    Success = true,
+                    Success = created,
                     Message = message,
                     Response = elementIds
                 };

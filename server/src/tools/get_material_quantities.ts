@@ -1,65 +1,21 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { withRevitConnection } from "../utils/ConnectionManager.js";
+import { callRevit } from "../utils/reply.js";
 
 export function registerGetMaterialQuantitiesTool(server: McpServer) {
   server.tool(
     "get_material_quantities",
-    "Calculate material quantities and takeoffs from the current Revit project: name, class, area, " +
-      "volume and element count per material. Per-element ID lists are OMITTED by default - they were " +
-      "90.1% of a 328,971-character response on an ordinary model and overflowed the client limit. Pass " +
-      "includeElementIds to get them.",
+    "Material takeoff: per material name, class, areaM2, volumeM3 and element count, plus totals. Filter by BuiltInCategory names (OST_Walls...; an unknown name is an error, not ignored). includeElementIds adds id lists, which can be large.",
     {
-      categoryFilters: z
-        .array(z.string())
-        .optional()
-        .describe("Optional list of Revit category names to filter by (e.g., ['OST_Walls', 'OST_Floors', 'OST_Roofs']). If not specified, all categories are included."),
-      selectedElementsOnly: z
-        .boolean()
-        .optional()
-        .default(false)
-        .describe("Whether to only analyze currently selected elements. Defaults to false (analyze entire project)."),
-      includeElementIds: z
-        .boolean()
-        .optional()
-        .default(false)
-        .describe(
-          "Include the per-material list of element IDs. Defaults to false: on a real model this list " +
-            "was 16,831 ids and 90.1% of the whole response. The element COUNT is always reported."
-        ),
+      categoryFilters: z.array(z.string()).optional().describe("BuiltInCategory names; all if omitted"),
+      selectedElementsOnly: z.boolean().optional().default(false).describe("Only the current selection"),
+      includeElementIds: z.boolean().optional().default(false).describe("Add per-material element id lists"),
     },
-    async (args, extra) => {
-      const params = {
+    async (args) =>
+      callRevit("get_material_quantities", {
         categoryFilters: args.categoryFilters ?? null,
         selectedElementsOnly: args.selectedElementsOnly ?? false,
         includeElementIds: args.includeElementIds ?? false,
-      };
-
-      try {
-        const response = await withRevitConnection(async (revitClient) => {
-          return await revitClient.sendCommand("get_material_quantities", params);
-        });
-
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(response, null, 2),
-            },
-          ],
-        };
-      } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Get material quantities failed: ${
-                error instanceof Error ? error.message : String(error)
-              }`,
-            },
-          ],
-        };
-      }
-    }
+      })
   );
 }

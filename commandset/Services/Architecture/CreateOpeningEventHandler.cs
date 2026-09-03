@@ -78,34 +78,37 @@ namespace RevitMCPCommandSet.Services.Architecture
                                 Floor hostFloor = hostElement as Floor;
                                 if (info.Shape == OpeningShape.Rectangular)
                                 {
+                                    XYZ loc = info.Location != null ? JZPoint.ToXYZ(info.Location) : new XYZ(0, 0, 0);
                                     // Document.Create.NewOpening(Element, CurveArray, Boolean) is identical across Revit 2022-2027.
                                     CurveArray curveArray = new CurveArray();
-                                    curveArray.Append(Line.CreateBound(new XYZ(0, 0, 0), new XYZ(widthInFeet, 0, 0)));
-                                    curveArray.Append(Line.CreateBound(new XYZ(widthInFeet, 0, 0), new XYZ(widthInFeet, heightInFeet, 0)));
-                                    curveArray.Append(Line.CreateBound(new XYZ(widthInFeet, heightInFeet, 0), new XYZ(0, heightInFeet, 0)));
-                                    curveArray.Append(Line.CreateBound(new XYZ(0, heightInFeet, 0), new XYZ(0, 0, 0)));
+                                    curveArray.Append(Line.CreateBound(new XYZ(loc.X, loc.Y, loc.Z), new XYZ(loc.X + widthInFeet, loc.Y, loc.Z)));
+                                    curveArray.Append(Line.CreateBound(new XYZ(loc.X + widthInFeet, loc.Y, loc.Z), new XYZ(loc.X + widthInFeet, loc.Y + heightInFeet, loc.Z)));
+                                    curveArray.Append(Line.CreateBound(new XYZ(loc.X + widthInFeet, loc.Y + heightInFeet, loc.Z), new XYZ(loc.X, loc.Y + heightInFeet, loc.Z)));
+                                    curveArray.Append(Line.CreateBound(new XYZ(loc.X, loc.Y + heightInFeet, loc.Z), new XYZ(loc.X, loc.Y, loc.Z)));
                                     opening = _doc.Create.NewOpening(hostFloor, curveArray, false);
                                 }
                             }
                             else if (info.OpeningType == OpeningType.RoofOpening && hostElement is RoofBase)
                             {
                                 RoofBase hostRoof = hostElement as RoofBase;
+                                XYZ loc = info.Location != null ? JZPoint.ToXYZ(info.Location) : new XYZ(0, 0, 0);
                                 // Document.Create.NewOpening(Element, CurveArray, Boolean) is identical across Revit 2022-2027.
                                 CurveArray curveArray = new CurveArray();
-                                curveArray.Append(Line.CreateBound(new XYZ(0, 0, 0), new XYZ(widthInFeet, 0, 0)));
-                                curveArray.Append(Line.CreateBound(new XYZ(widthInFeet, 0, 0), new XYZ(widthInFeet, heightInFeet, 0)));
-                                curveArray.Append(Line.CreateBound(new XYZ(widthInFeet, heightInFeet, 0), new XYZ(0, heightInFeet, 0)));
-                                curveArray.Append(Line.CreateBound(new XYZ(0, heightInFeet, 0), new XYZ(0, 0, 0)));
+                                curveArray.Append(Line.CreateBound(new XYZ(loc.X, loc.Y, loc.Z), new XYZ(loc.X + widthInFeet, loc.Y, loc.Z)));
+                                curveArray.Append(Line.CreateBound(new XYZ(loc.X + widthInFeet, loc.Y, loc.Z), new XYZ(loc.X + widthInFeet, loc.Y + heightInFeet, loc.Z)));
+                                curveArray.Append(Line.CreateBound(new XYZ(loc.X + widthInFeet, loc.Y + heightInFeet, loc.Z), new XYZ(loc.X, loc.Y + heightInFeet, loc.Z)));
+                                curveArray.Append(Line.CreateBound(new XYZ(loc.X, loc.Y + heightInFeet, loc.Z), new XYZ(loc.X, loc.Y, loc.Z)));
                                 opening = _doc.Create.NewOpening(hostRoof, curveArray, false);
                             }
                             else if (info.OpeningType == OpeningType.ShaftOpening)
                             {
+                                XYZ loc = info.Location != null ? JZPoint.ToXYZ(info.Location) : new XYZ(0, 0, 0);
                                 // Document.Create.NewOpening(Element, CurveArray, Boolean) is identical across Revit 2022-2027.
                                 CurveArray curveArray = new CurveArray();
-                                curveArray.Append(Line.CreateBound(new XYZ(0, 0, 0), new XYZ(widthInFeet, 0, 0)));
-                                curveArray.Append(Line.CreateBound(new XYZ(widthInFeet, 0, 0), new XYZ(widthInFeet, heightInFeet, 0)));
-                                curveArray.Append(Line.CreateBound(new XYZ(widthInFeet, heightInFeet, 0), new XYZ(0, heightInFeet, 0)));
-                                curveArray.Append(Line.CreateBound(new XYZ(0, heightInFeet, 0), new XYZ(0, 0, 0)));
+                                curveArray.Append(Line.CreateBound(new XYZ(loc.X, loc.Y, loc.Z), new XYZ(loc.X + widthInFeet, loc.Y, loc.Z)));
+                                curveArray.Append(Line.CreateBound(new XYZ(loc.X + widthInFeet, loc.Y, loc.Z), new XYZ(loc.X + widthInFeet, loc.Y + heightInFeet, loc.Z)));
+                                curveArray.Append(Line.CreateBound(new XYZ(loc.X + widthInFeet, loc.Y + heightInFeet, loc.Z), new XYZ(loc.X, loc.Y + heightInFeet, loc.Z)));
+                                curveArray.Append(Line.CreateBound(new XYZ(loc.X, loc.Y + heightInFeet, loc.Z), new XYZ(loc.X, loc.Y, loc.Z)));
                                 opening = _doc.Create.NewOpening(hostElement as CeilingAndFloor, curveArray, false);
                             }
 
@@ -130,9 +133,12 @@ namespace RevitMCPCommandSet.Services.Architecture
                     message += "\nWarnings:\n  " + string.Join("\n  ", _warnings);
                 }
 
+                bool noneCreated = elementIds.Count == 0;
+                bool hasFailures = _warnings.Count > 0;
+
                 Result = new AIResult<List<int>>
                 {
-                    Success = true,
+                    Success = !(noneCreated && hasFailures),
                     Message = message,
                     Response = elementIds
                 };

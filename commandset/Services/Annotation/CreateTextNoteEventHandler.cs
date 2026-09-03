@@ -115,7 +115,10 @@ namespace RevitMCPCommandSet.Services.Annotation
                     }
                 }
 
-                string message = $"Successfully created {elementIds.Count} text note(s).";
+                bool created = elementIds.Count > 0;
+                string message = created
+                    ? $"Successfully created {elementIds.Count} text note(s)."
+                    : "Nothing was created.";
                 if (_warnings.Count > 0)
                 {
                     message += "\n\nWarnings:\n  - " + string.Join("\n  - ", _warnings);
@@ -123,7 +126,7 @@ namespace RevitMCPCommandSet.Services.Annotation
 
                 Result = new AIResult<List<int>>
                 {
-                    Success = true,
+                    Success = created,
                     Message = message,
                     Response = elementIds,
                 };

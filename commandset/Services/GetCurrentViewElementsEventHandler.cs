@@ -187,7 +187,8 @@ namespace RevitMCPCommandSet.Services
                 {
                     FilteredElementCount = 0,
                     Elements = new List<ElementInfo>(),
-                    Warning = "Failed to read the current view: " + ex.Message
+                    Warning = "Failed to read the current view: " + ex.Message,
+                    Ok = false
                 };
             }
             finally
@@ -207,42 +208,68 @@ namespace RevitMCPCommandSet.Services
         {
             var properties = new Dictionary<string, string>();
 
-            // Add common properties
-            properties.Add("ElementId", element.Id.GetValue().ToString());
+            // Location in MILLIMETRES, with the unit in the key. These were written
+            // as raw internal feet ("LocationX": "12.34") under a tool that promises
+            // mm everywhere, which is exactly the kind of number an AI then feeds
+            // back into create_wall as if it were millimetres.
+            const double FT_TO_MM = 304.8;
+            string Mm(XYZ p) => $"{p.X * FT_TO_MM:F1}, {p.Y * FT_TO_MM:F1}, {p.Z * FT_TO_MM:F1}";
+
             if (element.Location != null)
             {
                 if (element.Location is LocationPoint locationPoint)
                 {
-                    var point = locationPoint.Point;
-                    properties.Add("LocationX", point.X.ToString("F2"));
-                    properties.Add("LocationY", point.Y.ToString("F2"));
-                    properties.Add("LocationZ", point.Z.ToString("F2"));
+                    properties.Add("LocationMm", Mm(locationPoint.Point));
                 }
                 else if (element.Location is LocationCurve locationCurve)
                 {
                     var curve = locationCurve.Curve;
-                    properties.Add("Start", $"{curve.GetEndPoint(0).X:F2}, {curve.GetEndPoint(0).Y:F2}, {curve.GetEndPoint(0).Z:F2}");
-                    properties.Add("End", $"{curve.GetEndPoint(1).X:F2}, {curve.GetEndPoint(1).Y:F2}, {curve.GetEndPoint(1).Z:F2}");
-                    properties.Add("Length", curve.Length.ToString("F2"));
+                    properties.Add("StartMm", Mm(curve.GetEndPoint(0)));
+                    properties.Add("EndMm", Mm(curve.GetEndPoint(1)));
+                    properties.Add("LengthMm", (curve.Length * FT_TO_MM).ToString("F1"));
                 }
             }
 
-            // Retrieve common parameter values
-            var commonParams = new[] { "Comments", "Mark", "Level", "Family", "Type" };
+            // Common parameters. Family and Type are resolved to NAMES (they were
+            // emitted as raw ElementIds: "Family": "49559"), and doubles use the
+            // display string so the unit travels with the number ("3000 mm").
+            if (element is FamilyInstance fi)
+            {
+                if (!string.IsNullOrEmpty(fi.Symbol?.FamilyName)) properties["Family"] = fi.Symbol.FamilyName;
+                if (!string.IsNullOrEmpty(fi.Symbol?.Name)) properties["Type"] = fi.Symbol.Name;
+            }
+            else
+            {
+                var typeId = element.GetTypeId();
+                if (typeId != null && typeId != ElementId.InvalidElementId)
+                {
+                    var typeElem = element.Document.GetElement(typeId);
+                    if (typeElem != null)
+                    {
+                        properties["Type"] = typeElem.Name;
+                        string family = typeElem.get_Parameter(BuiltInParameter.SYMBOL_FAMILY_NAME_PARAM)?.AsString();
+                        if (!string.IsNullOrEmpty(family)) properties["Family"] = family;
+                    }
+                }
+            }
+
+            var commonParams = new[] { "Comments", "Mark", "Level" };
             foreach (var paramName in commonParams)
             {
                 Parameter param = element.LookupParameter(paramName);
-                if (param != null && !param.IsReadOnly)
+                if (param == null || !param.HasValue) continue;
+                string value = null;
+                switch (param.StorageType)
                 {
-                    if (param.StorageType == StorageType.String)
-                        properties.Add(paramName, param.AsString() ?? "");
-                    else if (param.StorageType == StorageType.Double)
-                        properties.Add(paramName, param.AsDouble().ToString("F2"));
-                    else if (param.StorageType == StorageType.Integer)
-                        properties.Add(paramName, param.AsInteger().ToString());
-                    else if (param.StorageType == StorageType.ElementId)
-                        properties.Add(paramName, param.AsElementId().GetValue().ToString());
+                    case StorageType.String: value = param.AsString(); break;
+                    case StorageType.Double: value = param.AsValueString() ?? (param.AsDouble() * FT_TO_MM).ToString("F1") + " mm"; break;
+                    case StorageType.Integer: value = param.AsValueString() ?? param.AsInteger().ToString(); break;
+                    case StorageType.ElementId:
+                        var referenced = element.Document.GetElement(param.AsElementId());
+                        value = referenced?.Name ?? param.AsElementId().GetValue().ToString();
+                        break;
                 }
+                if (!string.IsNullOrEmpty(value)) properties[paramName] = value;
             }
 
             return properties;
@@ -301,5 +328,9 @@ namespace RevitMCPCommandSet.Services
     public class ViewElementsResultWithWarning : ViewElementsResult
     {
         public string Warning { get; set; }
+        // Serialised as "ok": false so fromRevit (reply.ts) surfaces exceptions as isError:true.
+        // The attribute matters: without it Newtonsoft emits "Ok", which reply.ts did not check.
+        [Newtonsoft.Json.JsonProperty("ok")]
+        public bool Ok { get; set; } = true;
     }
 }

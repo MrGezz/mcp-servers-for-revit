@@ -30,21 +30,31 @@ namespace RevitMCPCommandSet.Services.Query
                 var collisions = new List<object>();
                 var options = new Options { ComputeReferences = true, DetailLevel = ViewDetailLevel.Fine };
 
+                // Pre-filter to elements that actually resolve to a solid.
+                // TotalPairsChecked must reflect only pairs that were truly evaluated.
+                var validElements = new List<Tuple<ElementId, Element, Solid>>();
+                var skippedIds = new List<int>();
                 for (int i = 0; i < elementIds.Count; i++)
                 {
-                    var elem1 = Doc.GetElement(elementIds[i]);
-                    if (elem1 == null) continue;
-                    var geom1 = elem1.get_Geometry(options);
-                    Solid solid1 = GetFirstSolid(geom1);
-                    if (solid1 == null) continue;
+                    var elem = Doc.GetElement(elementIds[i]);
+                    if (elem == null) { skippedIds.Add(ElementIds[i]); continue; }
+                    var geom = elem.get_Geometry(options);
+                    Solid solid = GetFirstSolid(geom);
+                    if (solid == null) { skippedIds.Add(ElementIds[i]); continue; }
+                    validElements.Add(Tuple.Create(elementIds[i], elem, solid));
+                }
 
-                    for (int j = i + 1; j < elementIds.Count; j++)
+                for (int i = 0; i < validElements.Count; i++)
+                {
+                    var id1 = validElements[i].Item1;
+                    var elem1 = validElements[i].Item2;
+                    var solid1 = validElements[i].Item3;
+
+                    for (int j = i + 1; j < validElements.Count; j++)
                     {
-                        var elem2 = Doc.GetElement(elementIds[j]);
-                        if (elem2 == null) continue;
-                        var geom2 = elem2.get_Geometry(options);
-                        Solid solid2 = GetFirstSolid(geom2);
-                        if (solid2 == null) continue;
+                        var id2 = validElements[j].Item1;
+                        var elem2 = validElements[j].Item2;
+                        var solid2 = validElements[j].Item3;
 
                         bool overlaps = false;
                         string intersectionType = "Unknown";
@@ -64,8 +74,8 @@ namespace RevitMCPCommandSet.Services.Query
                         {
                             collisions.Add(new
                             {
-                                ElementId1 = elementIds[i].GetIntValue(),
-                                ElementId2 = elementIds[j].GetIntValue(),
+                                ElementId1 = id1.GetIntValue(),
+                                ElementId2 = id2.GetIntValue(),
                                 IntersectionType = intersectionType,
                                 Element1Name = elem1.Name,
                                 Element2Name = elem2.Name,
@@ -81,9 +91,10 @@ namespace RevitMCPCommandSet.Services.Query
                     Success = true,
                     Response = new
                     {
-                        TotalPairsChecked = (elementIds.Count * (elementIds.Count - 1)) / 2,
+                        TotalPairsChecked = (validElements.Count * (validElements.Count - 1)) / 2,
                         CollisionCount = collisions.Count,
-                        Collisions = collisions
+                        Collisions = collisions,
+                        SkippedElementIds = skippedIds.Count > 0 ? (object)skippedIds : null
                     }
                 };
             }

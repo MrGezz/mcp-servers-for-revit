@@ -1,25 +1,23 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { memoryOp, projectId, toProps } from "../memory/legacyBridge.js";
+import { fromRevit, fail, errorMessage } from "../utils/reply.js";
 
 export function registerStoreProjectDataTool(server: McpServer) {
   server.tool(
     "store_project_data",
-    "Store project-level information in the current Revit model. The data is written INTO the model " +
-      "via Extensible Storage, so it travels with the file rather than living in a sidecar database " +
-      "that desynchronises when the model is copied, renamed or rolled back. Read it back with " +
-      "query_stored_data or project_memory_query.",
+    "Writes project metadata into the model via Extensible Storage; travels with the file. Read back with query_stored_data or project_memory_query.",
     {
-      project_name: z.string().describe("The name of the Revit project"),
-      project_path: z.string().optional().describe("File path to the project"),
-      project_number: z.string().optional().describe("Project number or identifier"),
-      project_address: z.string().optional().describe("Project address or location"),
-      client_name: z.string().optional().describe("Client name"),
-      project_status: z.string().optional().describe("Project status (e.g. Active, Completed, On Hold)"),
-      author: z.string().optional().describe("Project author or creator"),
-      metadata: z.record(z.string()).optional().describe("Additional project metadata as key-value pairs"),
+      project_name: z.string(),
+      project_path: z.string().optional(),
+      project_number: z.string().optional(),
+      project_address: z.string().optional(),
+      client_name: z.string().optional(),
+      project_status: z.string().optional().describe("e.g. Active, Completed, On Hold"),
+      author: z.string().optional(),
+      metadata: z.record(z.string()).optional().describe("Extra key-value pairs"),
     },
-    async (args: any) => {
+    async (args) => {
       try {
         const { project_name, metadata, ...rest } = args;
         const response = await memoryOp("write", {
@@ -33,23 +31,12 @@ export function registerStoreProjectDataTool(server: McpServer) {
           ],
           relations: [],
         });
-        return {
-          content: [{ type: "text" as const, text: JSON.stringify(response, null, 2) }],
-        };
+        return fromRevit(response);
       } catch (error) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text:
-                "store_project_data failed: " +
-                (error instanceof Error ? error.message : String(error)) +
-                "\n\nThis tool now writes into the open Revit model, so it needs a live connection " +
-                "and an open document.",
-            },
-          ],
-          isError: true as const,
-        };
+        return fail(
+          `store_project_data failed: ${errorMessage(error)}` +
+            "\n\nThis tool writes into the open Revit model — needs a live connection and an open document."
+        );
       }
     }
   );

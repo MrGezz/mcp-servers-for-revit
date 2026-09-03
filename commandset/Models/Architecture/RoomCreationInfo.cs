@@ -59,28 +59,10 @@ public class RoomCreationInfo
     public string Number { get; set; }
 
     /// <summary>
-    ///     Level elevation (mm)
-    /// </summary>
-    [JsonProperty("level")]
-    public double Level { get; set; }
-
-    /// <summary>
     ///     Level ID in Revit
     /// </summary>
     [JsonProperty("levelId")]
     public int LevelId { get; set; }
-
-    /// <summary>
-    ///     Room height (mm)
-    /// </summary>
-    [JsonProperty("height")]
-    public double Height { get; set; }
-
-    /// <summary>
-    ///     Room phase ID
-    /// </summary>
-    [JsonProperty("phaseId")]
-    public int PhaseId { get; set; }
 
     /// <summary>
     ///     Upper limit level ID

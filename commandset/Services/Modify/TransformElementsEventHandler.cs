@@ -39,6 +39,7 @@ namespace RevitMCPCommandSet.Services.Modify
                             double dy = TransformParams["dy"]?.Value<double>() ?? 0;
                             double dz = TransformParams["dz"]?.Value<double>() ?? 0;
                             ElementTransformUtils.MoveElements(Doc, ids, new XYZ(dx, dy, dz));
+                            newIds = ElementIds.ToList();
                             break;
                         }
                         case "copy":
@@ -65,6 +66,7 @@ namespace RevitMCPCommandSet.Services.Modify
                             double angle = TransformParams["angle"]?.Value<double>() ?? 0;
                             var line = Line.CreateUnbound(origin, axis);
                             ElementTransformUtils.RotateElements(Doc, ids, line, angle);
+                            newIds = ElementIds.ToList();
                             break;
                         }
                         case "mirror":
@@ -81,6 +83,7 @@ namespace RevitMCPCommandSet.Services.Modify
                             ) : XYZ.BasisY;
                             var plane = Plane.CreateByNormalAndOrigin(mirrorNormal, mirrorOrigin);
                             ElementTransformUtils.MirrorElements(Doc, ids, plane, false);
+                            newIds = ElementIds.ToList();
                             break;
                         }
                         default:

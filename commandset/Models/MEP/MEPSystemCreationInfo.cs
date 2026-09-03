@@ -36,7 +36,6 @@ public class MEPSystemCreationInfo
     public MEPSystemCreationInfo()
     {
         ElementIds = new List<int>();
-        Options = new Dictionary<string, object>();
     }
 
     /// <summary>
@@ -57,9 +56,4 @@ public class MEPSystemCreationInfo
     [JsonProperty("elementIds")]
     public List<int> ElementIds { get; set; }
 
-    /// <summary>
-    ///     Additional options
-    /// </summary>
-    [JsonProperty("options")]
-    public Dictionary<string, object> Options { get; set; }
 }

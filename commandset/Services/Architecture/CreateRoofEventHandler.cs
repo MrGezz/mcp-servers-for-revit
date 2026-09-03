@@ -206,15 +206,24 @@ namespace RevitMCPCommandSet.Services.Architecture
                     }
                 }
 
-                string message = $"Successfully created {elementIds.Count} roof(s)";
-                if (_warnings.Count > 0)
+                bool anyCreated = elementIds.Count > 0;
+                string message;
+                if (anyCreated)
                 {
-                    message += "\nWarnings:\n  " + string.Join("\n  ", _warnings);
+                    message = $"Successfully created {elementIds.Count} roof(s)";
+                    if (_warnings.Count > 0)
+                        message += "\nWarnings:\n  " + string.Join("\n  ", _warnings);
+                }
+                else
+                {
+                    message = _warnings.Count > 0
+                        ? "Failed to create any roofs.\nWarnings:\n  " + string.Join("\n  ", _warnings)
+                        : "Failed to create any roofs: no valid level or roof type found";
                 }
 
                 Result = new AIResult<List<int>>
                 {
-                    Success = true,
+                    Success = anyCreated,
                     Message = message,
                     Response = elementIds
                 };

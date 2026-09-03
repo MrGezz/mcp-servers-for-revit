@@ -89,14 +89,17 @@ namespace RevitMCPCommandSet.Services.MEP
           }
         }
 
-        string message = $"Successfully created {systemIds.Count} MEP system(s).";
+        bool created = systemIds.Count > 0;
+        string message = created
+            ? $"Successfully created {systemIds.Count} MEP system(s)."
+            : "Nothing was created.";
         if (_warnings.Count > 0)
         {
           message += "\n\nWarnings:\n  - " + string.Join("\n  - ", _warnings);
         }
         Result = new AIResult<List<int>>
         {
-          Success = true,
+          Success = created,
           Message = message,
           Response = systemIds,
         };
@@ -140,16 +143,7 @@ namespace RevitMCPCommandSet.Services.MEP
           }
           if (mechType != null)
             return mechType.Id;
-          // Fallback: first available mechanical system type
-          MechanicalSystemType firstMech;
-          using (var fec = new FilteredElementCollector(doc))
-          {
-            firstMech = fec
-                .OfClass(typeof(MechanicalSystemType))
-                .Cast<MechanicalSystemType>()
-                .FirstOrDefault();
-          }
-          return firstMech?.Id ?? ElementId.InvalidElementId;
+          return ElementId.InvalidElementId;
         }
         case "sanitary":
         case "hydronicsupply":
@@ -165,16 +159,7 @@ namespace RevitMCPCommandSet.Services.MEP
           }
           if (pipeType != null)
             return pipeType.Id;
-          // Fallback: first available piping system type
-          PipingSystemType firstPipe;
-          using (var fec = new FilteredElementCollector(doc))
-          {
-            firstPipe = fec
-                .OfClass(typeof(PipingSystemType))
-                .Cast<PipingSystemType>()
-                .FirstOrDefault();
-          }
-          return firstPipe?.Id ?? ElementId.InvalidElementId;
+          return ElementId.InvalidElementId;
         }
         default:
           return ElementId.InvalidElementId;

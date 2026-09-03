@@ -51,10 +51,10 @@ public class ViewCreationInfo
     public string ViewType { get; set; } = "FloorPlan";
 
     /// <summary>
-    ///     Level elevation in millimeters (for plan views)
+    ///     Level elevation in millimeters (for plan views). Null means not provided (use first level).
     /// </summary>
     [JsonProperty("levelElevation")]
-    public double LevelElevation { get; set; }
+    public double? LevelElevation { get; set; }
 
     /// <summary>
     ///     View detail level (Coarse, Medium, Fine)

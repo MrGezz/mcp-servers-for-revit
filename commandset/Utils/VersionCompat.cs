@@ -106,7 +106,7 @@ namespace RevitMCPCommandSet.Utils
             }
 
             Line axis = Line.CreateUnbound(textNote.Coord, XYZ.BasisZ);
-            ElementTransformUtils.RotateElement(doc, textNote.Id, axis, rotation);
+            ElementTransformUtils.RotateElement(doc, textNote.Id, axis, rotation * Math.PI / 180.0);
         }
 
         // ===== Schedule appearance =====

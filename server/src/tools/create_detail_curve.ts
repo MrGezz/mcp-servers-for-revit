@@ -1,30 +1,21 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { withRevitConnection } from "../utils/ConnectionManager.js";
+import { callRevit } from "../utils/reply.js";
+import { ElementId } from "../utils/schemas.js";
 
 export function registerCreateDetailCurveTool(server: McpServer) {
   server.tool(
     "create_detail_curve",
-    "Create detail lines in a Revit view. All coordinates in mm.",
+    "Create detail lines in a Revit view (mm). Works in any 2D view that accepts detail elements (plan, ceiling plan, section, elevation, drafting). Returns ids of created detail curve elements.",
     {
-      viewId: z.number().int().describe("Target view ID"),
+      viewId: ElementId,
       lines: z.array(z.object({
-        startX: z.number().describe("Start X in mm"),
-        startY: z.number().describe("Start Y in mm"),
-        endX: z.number().describe("End X in mm"),
-        endY: z.number().describe("End Y in mm"),
-      })).describe("Array of lines to create"),
+        startX: z.number(),
+        startY: z.number(),
+        endX: z.number(),
+        endY: z.number(),
+      })),
     },
-    async (args, extra) => {
-      const params = args;
-      try {
-        const response = await withRevitConnection(async (revitClient) => {
-          return await revitClient.sendCommand("create_detail_curve", params);
-        });
-        return { content: [{ type: "text", text: JSON.stringify(response, null, 2) }] };
-      } catch (error) {
-        return { content: [{ type: "text", text: `Create detail curve failed: ${error instanceof Error ? error.message : String(error)}` }] };
-      }
-    }
+    async (args) => callRevit("create_detail_curve", args)
   );
 }

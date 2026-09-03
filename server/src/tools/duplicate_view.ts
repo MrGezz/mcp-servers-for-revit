@@ -1,26 +1,17 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { withRevitConnection } from "../utils/ConnectionManager.js";
+import { callRevit } from "../utils/reply.js";
+import { ElementId } from "../utils/schemas.js";
 
 export function registerDuplicateViewTool(server: McpServer) {
   server.tool(
     "duplicate_view",
-    "Duplicate a view in Revit with the specified duplication mode.",
+    "Duplicates a Revit view. Mode controls whether detailing and dependents are copied. Returns the new view's ID.",
     {
-      viewId: z.number().int().describe("Source view ID to duplicate"),
-      mode: z.enum(["duplicate", "with_detailing", "dependent"]).optional().default("duplicate").describe("Duplication mode"),
-      newName: z.string().optional().describe("New name for the duplicated view (optional)"),
+      viewId: ElementId.describe("Source view ID to duplicate"),
+      mode: z.enum(["duplicate", "with_detailing", "dependent"]).optional().default("duplicate"),
+      newName: z.string().optional(),
     },
-    async (args, extra) => {
-      const params = args;
-      try {
-        const response = await withRevitConnection(async (revitClient) => {
-          return await revitClient.sendCommand("duplicate_view", params);
-        });
-        return { content: [{ type: "text", text: JSON.stringify(response, null, 2) }] };
-      } catch (error) {
-        return { content: [{ type: "text", text: `Duplicate view failed: ${error instanceof Error ? error.message : String(error)}` }] };
-      }
-    }
+    async (args) => callRevit("duplicate_view", args)
   );
 }

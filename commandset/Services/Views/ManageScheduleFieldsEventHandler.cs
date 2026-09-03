@@ -82,65 +82,89 @@ namespace RevitMCPCommandSet.Services.Views
                         }
                         case "remove":
                         {
+                            bool removed = false;
                             foreach (var fieldId in fieldOrder)
                             {
                                 ScheduleField field = definition.GetField(fieldId);
                                 if (field.GetSchedulableField().GetName(doc) == FieldName)
                                 {
                                     definition.RemoveField(fieldId);
+                                    removed = true;
                                     break;
                                 }
+                            }
+                            if (!removed)
+                            {
+                                Result = new AIResult<bool> { Success = false, Message = $"Field '{FieldName}' not found in the schedule" };
+                                return;
                             }
                             break;
                         }
                         case "reorder":
                         {
-                            if (Position.HasValue)
+                            if (!Position.HasValue)
                             {
-                                ScheduleFieldId targetFieldId = null;
-                                foreach (var fieldId in fieldOrder)
+                                Result = new AIResult<bool> { Success = false, Message = "Position is required for reorder action" };
+                                return;
+                            }
+                            ScheduleFieldId targetFieldId = null;
+                            foreach (var fieldId in fieldOrder)
+                            {
+                                ScheduleField field = definition.GetField(fieldId);
+                                if (field.GetSchedulableField().GetName(doc) == FieldName)
                                 {
-                                    ScheduleField field = definition.GetField(fieldId);
-                                    if (field.GetSchedulableField().GetName(doc) == FieldName)
-                                    {
-                                        targetFieldId = fieldId;
-                                        break;
-                                    }
-                                }
-
-                                if (targetFieldId != null)
-                                {
-                                    fieldOrder.Remove(targetFieldId);
-                                    int insertPos = Math.Min(Position.Value, fieldOrder.Count);
-                                    fieldOrder.Insert(insertPos, targetFieldId);
-                                    definition.SetFieldOrder(fieldOrder);
+                                    targetFieldId = fieldId;
+                                    break;
                                 }
                             }
+                            if (targetFieldId == null)
+                            {
+                                Result = new AIResult<bool> { Success = false, Message = $"Field '{FieldName}' not found in the schedule" };
+                                return;
+                            }
+                            fieldOrder.Remove(targetFieldId);
+                            int insertPos = Math.Min(Position.Value, fieldOrder.Count);
+                            fieldOrder.Insert(insertPos, targetFieldId);
+                            definition.SetFieldOrder(fieldOrder);
                             break;
                         }
                         case "hide":
                         {
+                            bool foundHide = false;
                             foreach (var fieldId in fieldOrder)
                             {
                                 ScheduleField field = definition.GetField(fieldId);
                                 if (field.GetSchedulableField().GetName(doc) == FieldName)
                                 {
                                     VersionCompat.SetScheduleFieldVisibility(definition, fieldId, false);
+                                    foundHide = true;
                                     break;
                                 }
+                            }
+                            if (!foundHide)
+                            {
+                                Result = new AIResult<bool> { Success = false, Message = $"Field '{FieldName}' not found in the schedule" };
+                                return;
                             }
                             break;
                         }
                         case "show":
                         {
+                            bool foundShow = false;
                             foreach (var fieldId in fieldOrder)
                             {
                                 ScheduleField field = definition.GetField(fieldId);
                                 if (field.GetSchedulableField().GetName(doc) == FieldName)
                                 {
                                     VersionCompat.SetScheduleFieldVisibility(definition, fieldId, true);
+                                    foundShow = true;
                                     break;
                                 }
+                            }
+                            if (!foundShow)
+                            {
+                                Result = new AIResult<bool> { Success = false, Message = $"Field '{FieldName}' not found in the schedule" };
+                                return;
                             }
                             break;
                         }

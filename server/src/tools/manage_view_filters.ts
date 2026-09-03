@@ -1,37 +1,24 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { withRevitConnection } from "../utils/ConnectionManager.js";
+import { callRevit } from "../utils/reply.js";
+import { ElementId, RGB } from "../utils/schemas.js";
 
 export function registerManageViewFiltersTool(server: McpServer) {
   server.tool(
     "manage_view_filters",
-    "Add or remove view filters in Revit and optionally set graphic overrides.",
+    "Add or remove a named view filter on a view; optionally set graphic overrides (color, line weight, fill pattern, halftone, visibility). Needs a valid viewId. Returns the result.",
     {
-      viewId: z.number().int().describe("View ID to manage filters on"),
-      action: z.enum(["add", "remove"]).describe("Action: add or remove"),
-      filterName: z.string().describe("Filter name"),
+      viewId: ElementId,
+      action: z.enum(["add", "remove"]),
+      filterName: z.string(),
       overrides: z.object({
-        visible: z.boolean().optional().describe("Filter visibility"),
-        color: z.object({
-          r: z.number().int().min(0).max(255),
-          g: z.number().int().min(0).max(255),
-          b: z.number().int().min(0).max(255),
-        }).optional().describe("Override color"),
-        lineWeight: z.number().int().optional().describe("Override line weight"),
-        fillPattern: z.string().optional().describe("Override fill pattern name"),
-        halftone: z.boolean().optional().describe("Halftone"),
-      }).optional().describe("Filter graphic overrides (for add action)"),
+        visible: z.boolean().optional(),
+        color: RGB.optional().describe("Projection line color (r,g,b 0-255)"),
+        lineWeight: z.number().int().optional(),
+        fillPattern: z.string().optional().describe("Fill pattern name"),
+        halftone: z.boolean().optional(),
+      }).optional().describe("Graphic overrides (for add action)"),
     },
-    async (args, extra) => {
-      const params = args;
-      try {
-        const response = await withRevitConnection(async (revitClient) => {
-          return await revitClient.sendCommand("manage_view_filters", params);
-        });
-        return { content: [{ type: "text", text: JSON.stringify(response, null, 2) }] };
-      } catch (error) {
-        return { content: [{ type: "text", text: `Manage view filters failed: ${error instanceof Error ? error.message : String(error)}` }] };
-      }
-    }
+    async (args) => callRevit("manage_view_filters", args)
   );
 }

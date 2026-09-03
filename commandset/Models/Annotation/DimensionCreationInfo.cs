@@ -67,12 +67,6 @@ public class DimensionCreationInfo
     public List<int> ElementIds { get; set; }
 
     /// <summary>
-    ///     Dimension type
-    /// </summary>
-    [JsonProperty("dimensionType")]
-    public string DimensionType { get; set; } = "Linear";
-
-    /// <summary>
     ///     Dimension style ID
     /// </summary>
     [JsonProperty("dimensionStyleId")]

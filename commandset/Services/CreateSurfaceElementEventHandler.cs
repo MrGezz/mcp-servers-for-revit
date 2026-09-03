@@ -52,15 +52,14 @@ namespace RevitMCPCommandSet.Services
 
                     // Step1 Get level and offset
                     Level baseLevel = null;
-                    Level topLevel = null;
-                    double topOffset = -1;  // ft
                     double baseOffset = -1; // ft
                     baseLevel = doc.FindNearestLevel(data.BaseLevel / 304.8);
-                    baseOffset = (data.BaseOffset + data.BaseLevel) / 304.8 - baseLevel.Elevation;
-                    topLevel = doc.FindNearestLevel((data.BaseLevel + data.BaseOffset + data.Thickness) / 304.8);
-                    topOffset = (data.BaseLevel + data.BaseOffset + data.Thickness) / 304.8 - topLevel.Elevation;
                     if (baseLevel == null)
+                    {
+                        _warnings.Add($"No level found near elevation {data.BaseLevel}mm; skipping item.");
                         continue;
+                    }
+                    baseOffset = (data.BaseOffset + data.BaseLevel) / 304.8 - baseLevel.Elevation;
 
                     // Step2 Get the family type
                     FamilySymbol symbol = null;
@@ -280,14 +279,17 @@ namespace RevitMCPCommandSet.Services
                         transaction.Commit();
                     }
                 }
-                string message = $"Successfully created {elementIds.Count} element(s).";
+                bool created = elementIds.Count > 0;
+                string message = created
+                    ? $"Successfully created {elementIds.Count} element(s)."
+                    : "Nothing was created.";
                 if (_warnings.Count > 0)
                 {
                     message += "\n\nWarnings:\n  - " + string.Join("\n  - ", _warnings);
                 }
                 Result = new AIResult<List<int>>
                 {
-                    Success = true,
+                    Success = created,
                     Message = message,
                     Response = elementIds,
                 };

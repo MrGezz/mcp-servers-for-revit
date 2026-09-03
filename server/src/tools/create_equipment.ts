@@ -1,33 +1,24 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { withRevitConnection } from "../utils/ConnectionManager.js";
+import { callRevit } from "../utils/reply.js";
+import { Pt } from "../utils/schemas.js";
 
 export function registerCreateEquipmentTool(server: McpServer) {
   server.tool(
     "create_equipment",
-    "Create MEP equipment instances in the Revit model. Supports placement of mechanical, electrical, and plumbing equipment with location, rotation, and family type. All units in mm.",
+    "Place MEP equipment (mechanical, electrical, plumbing) in the active model (mm). Requires location and baseLevel per item; rotation, category, family, and typeId are optional. Returns created element ids.",
     {
       data: z.array(z.object({
-        location: z.object({ x: z.number(), y: z.number(), z: z.number() }).describe("Equipment location in mm"),
-        rotation: z.number().optional().describe("Rotation around Z-axis in degrees"),
-        baseLevel: z.number().describe("Base level elevation in mm"),
-        baseOffset: z.number().optional().describe("Base offset in mm"),
-        category: z.string().optional().describe("Equipment category (Mechanical Equipment, Electrical Equipment, etc.)"),
-        equipmentType: z.string().optional().describe("Equipment type name"),
-        familyName: z.string().optional().describe("Family name"),
-        typeId: z.number().optional().describe("Family type ID"),
-      })).describe("Array of equipment to create"),
+        location: Pt,
+        rotation: z.number().optional().describe("Degrees, around Z-axis"),
+        baseLevel: z.number(),
+        baseOffset: z.number().optional().describe("Additional vertical offset in mm above baseLevel"),
+        category: z.string().optional().describe("E.g. Mechanical Equipment, Electrical Equipment"),
+        equipmentType: z.string().optional(),
+        familyName: z.string().optional(),
+        typeId: z.number().optional(),
+      })),
     },
-    async (args, extra) => {
-      const params = args;
-      try {
-        const response = await withRevitConnection(async (revitClient) => {
-          return await revitClient.sendCommand("create_equipment", params);
-        });
-        return { content: [{ type: "text", text: JSON.stringify(response, null, 2) }] };
-      } catch (error) {
-        return { content: [{ type: "text", text: `Create equipment failed: ${error instanceof Error ? error.message : String(error)}` }] };
-      }
-    }
+    async (args) => callRevit("create_equipment", args)
   );
 }

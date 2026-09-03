@@ -87,27 +87,8 @@ namespace RevitMCPCommandSet.Services
                 {
                     trans.Start();
 
-                    // 1. Resolve Level - Find nearest existing level to the target elevation (like walls do)
-                    Level level = doc.FindNearestLevel(Parameters.Elevation / 304.8);
-                    if (level == null)
-                    {
-                        // Fallback: try to find any level
-                        using (var levelCollector = new FilteredElementCollector(doc))
-                        {
-                            level = levelCollector
-                                .OfClass(typeof(Level))
-                                .Cast<Level>()
-                                .FirstOrDefault();
-                        }
-                    }
-                    if (level == null)
-                    {
-                        throw new Exception("No levels found in project. Please create at least one level before creating beam systems.");
-                    }
-
-                    // Add info about which level was selected
-                    double levelElevationMm = level.Elevation * 304.8;
-                    warnings.Add($"Using level '{level.Name}' at elevation {levelElevationMm:F0}mm (nearest to target elevation {Parameters.Elevation:F0}mm)");
+                    // 1. Resolve Level - by name, with auto-create for 'Level N' pattern and active-view fallback
+                    Level level = ResolveLevel(doc, Parameters.LevelName, warnings);
 
                     // 2. Build rectangular profile (4 curves in closed loop)
                     List<Curve> profileCurves = BuildRectangularProfile(

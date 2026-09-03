@@ -34,7 +34,7 @@ namespace RevitMCPCommandSet.Commands.Access
                     List<string> modelCategoryList = parameters?["modelCategoryList"]?.ToObject<List<string>>() ?? new List<string>();
                     List<string> annotationCategoryList = parameters?["annotationCategoryList"]?.ToObject<List<string>>() ?? new List<string>();
                     bool includeHidden = parameters?["includeHidden"]?.Value<bool>() ?? false;
-                    int limit = parameters?["limit"]?.Value<int>() ?? 100;
+                    int limit = parameters?["limit"]?.Value<int>() ?? 30;
 
                     // Set query parameters
                     _handler.SetQueryParameters(modelCategoryList, annotationCategoryList, includeHidden, limit);

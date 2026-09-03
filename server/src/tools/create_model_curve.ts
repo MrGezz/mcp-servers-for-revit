@@ -1,29 +1,22 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { withRevitConnection } from "../utils/ConnectionManager.js";
+import { callRevit } from "../utils/reply.js";
+import { Pt } from "../utils/schemas.js";
 
 export function registerCreateModelCurveTool(server: McpServer) {
   server.tool(
     "create_model_curve",
-    "Create model curves in the Revit model. Supports lines and arcs with start/end points, curve type, and sketch plane level. All units in mm.",
+    "Create model curves (line, arc, circle, or spline) in the active Revit model (mm). Requires an active model view. Returns created element ids.",
     {
       data: z.array(z.object({
-        startPoint: z.object({ x: z.number(), y: z.number(), z: z.number() }).describe("Start point in mm"),
-        endPoint: z.object({ x: z.number(), y: z.number(), z: z.number() }).describe("End point in mm"),
-        curveType: z.string().optional().describe("Curve type: Line or Arc"),
-        sketchPlaneLevel: z.number().optional().describe("Sketch plane level elevation in mm"),
-      })).describe("Array of model curve definitions to create"),
+        points: z.array(Pt).describe("Points defining curve geometry (mm)"),
+        curveType: z.string().optional().describe("Line (2pts), Arc (3pts), Circle (center+radius), or Spline (2+pts)"),
+        center: Pt.optional().describe("Center point for Circle (mm)"),
+        radius: z.number().optional().describe("Radius for Circle (mm)"),
+        normal: Pt.optional().describe("Normal vector for Circle plane"),
+        sketchPlaneId: z.number().optional().describe("SketchPlane element ID; omit to auto-create"),
+      })),
     },
-    async (args, extra) => {
-      const params = args;
-      try {
-        const response = await withRevitConnection(async (revitClient) => {
-          return await revitClient.sendCommand("create_model_curve", params);
-        });
-        return { content: [{ type: "text", text: JSON.stringify(response, null, 2) }] };
-      } catch (error) {
-        return { content: [{ type: "text", text: `Create model curve failed: ${error instanceof Error ? error.message : String(error)}` }] };
-      }
-    }
+    async (args) => callRevit("create_model_curve", args)
   );
 }

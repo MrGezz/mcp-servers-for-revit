@@ -52,9 +52,13 @@ namespace RevitMCPCommandSet.Services.Views
                                 .Cast<FilledRegionType>()
                                 .FirstOrDefault(ft => ft.Name == FilledRegionTypeName);
                         }
+                        if (regionType == null)
+                        {
+                            Result = new AIResult<int> { Success = false, Message = $"Filled region type '{FilledRegionTypeName}' not found" };
+                            return;
+                        }
                     }
-
-                    if (regionType == null)
+                    else
                     {
                         using (var collector = new FilteredElementCollector(doc))
                         {
@@ -71,11 +75,11 @@ namespace RevitMCPCommandSet.Services.Views
                         return;
                     }
 
-                    CurveLoop curveLoop = new CurveLoop();
-                    if (Boundary.Count > 0)
+                    IList<CurveLoop> loops = new List<CurveLoop>();
+                    foreach (var points in Boundary)
                     {
-                        List<JObject> points = Boundary[0];
                         int count = points.Count;
+                        CurveLoop curveLoop = new CurveLoop();
                         for (int i = 0; i < count; i++)
                         {
                             double x = points[i]["x"]?.Value<double>() ?? 0;
@@ -89,9 +93,8 @@ namespace RevitMCPCommandSet.Services.Views
 
                             curveLoop.Append(Line.CreateBound(startPt, endPt));
                         }
+                        loops.Add(curveLoop);
                     }
-
-                    IList<CurveLoop> loops = new List<CurveLoop> { curveLoop };
                     FilledRegion filledRegion = FilledRegion.Create(doc, regionType.Id, view.Id, loops);
 
                     int regionId = filledRegion.Id.GetIntValue();

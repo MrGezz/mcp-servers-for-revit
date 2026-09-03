@@ -34,9 +34,6 @@ namespace RevitMCPCommandSet.Services.Memory
             {
                 switch ((Action ?? string.Empty).ToLowerInvariant())
                 {
-                    case "read":
-                        DoRead();
-                        break;
                     case "query":
                         DoQuery();
                         break;
@@ -46,9 +43,6 @@ namespace RevitMCPCommandSet.Services.Memory
                     case "stats":
                         DoStats();
                         break;
-                    case "raw":
-                        DoRaw();
-                        break;
                     case "clear":
                         DoClear();
                         break;
@@ -57,7 +51,7 @@ namespace RevitMCPCommandSet.Services.Memory
                         {
                             Success = false,
                             Message =
-                                $"Unknown action '{Action}'. Use read, query, write, stats, raw or clear.",
+                                $"Unknown action '{Action}'. Use query, write, stats or clear.",
                             Response = null
                         };
                         break;
@@ -76,30 +70,6 @@ namespace RevitMCPCommandSet.Services.Memory
             {
                 _resetEvent.Set();
             }
-        }
-
-        private void DoRead()
-        {
-            ProjectMemoryGraph graph = ProjectMemoryStore.Read(_doc);
-            Result = new AIResult<object>
-            {
-                Success = true,
-                Message = $"{graph.Entities.Count} entities, {graph.Relations.Count} relations.",
-                Response = graph
-            };
-        }
-
-        private void DoRaw()
-        {
-            string raw = ProjectMemoryStore.ReadRaw(_doc);
-            Result = new AIResult<object>
-            {
-                Success = true,
-                Message = raw.Length == 0
-                    ? "No project memory is stored in this model."
-                    : $"{raw.Length} characters stored.",
-                Response = raw
-            };
         }
 
         private void DoQuery()

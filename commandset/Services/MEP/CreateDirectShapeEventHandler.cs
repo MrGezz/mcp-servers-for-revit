@@ -58,10 +58,10 @@ namespace RevitMCPCommandSet.Services.MEP
                 double w = data.Width / 304.8;
                 double d = data.Depth / 304.8;
                 double h = data.Height / 304.8;
-                XYZ profile0 = new XYZ(-w / 2, -d / 2, 0);
-                XYZ profile1 = new XYZ(w / 2, -d / 2, 0);
-                XYZ profile2 = new XYZ(w / 2, d / 2, 0);
-                XYZ profile3 = new XYZ(-w / 2, d / 2, 0);
+                XYZ profile0 = center + new XYZ(-w / 2, -d / 2, 0);
+                XYZ profile1 = center + new XYZ(w / 2, -d / 2, 0);
+                XYZ profile2 = center + new XYZ(w / 2, d / 2, 0);
+                XYZ profile3 = center + new XYZ(-w / 2, d / 2, 0);
 
                 CurveLoop baseLoop = new CurveLoop();
                 baseLoop.Append(Line.CreateBound(profile0, profile1));
@@ -76,6 +76,7 @@ namespace RevitMCPCommandSet.Services.MEP
               }
               case "cylinder":
               {
+                XYZ center = JZPoint.ToXYZ(data.Center);
                 double r = data.Radius / 304.8;
                 double h = data.Height / 304.8;
 
@@ -84,6 +85,8 @@ namespace RevitMCPCommandSet.Services.MEP
 
                 List<CurveLoop> loops = new List<CurveLoop> { circleLoop };
                 Solid cylinder = GeometryCreationUtilities.CreateExtrusionGeometry(loops, XYZ.BasisZ, h);
+                if (center.GetLength() > 1e-9)
+                  cylinder = SolidUtils.CreateTransformed(cylinder, Transform.CreateTranslation(center));
                 geometryObjects.Add(cylinder);
                 break;
               }
@@ -105,9 +108,9 @@ namespace RevitMCPCommandSet.Services.MEP
 
                 double len = data.ExtrusionLength / 304.8;
                 XYZ dir = new XYZ(
-                    data.ExtrusionDir.X / 304.8,
-                    data.ExtrusionDir.Y / 304.8,
-                    data.ExtrusionDir.Z / 304.8);
+                    data.ExtrusionDir.X,
+                    data.ExtrusionDir.Y,
+                    data.ExtrusionDir.Z);
                 if (dir.GetLength() < 1e-9)
                   dir = XYZ.BasisZ;
 
@@ -140,20 +143,26 @@ namespace RevitMCPCommandSet.Services.MEP
               }
 
               elementIds.Add(ds.Id.GetIntValue());
+              transaction.Commit();
             }
-
-            transaction.Commit();
+            else
+            {
+              transaction.RollBack();
+            }
           }
         }
 
-        string message = $"Successfully created {elementIds.Count} direct shape(s).";
+        bool created = elementIds.Count > 0;
+        string message = created
+            ? $"Successfully created {elementIds.Count} direct shape(s)."
+            : "Nothing was created.";
         if (_warnings.Count > 0)
         {
           message += "\n\nWarnings:\n  - " + string.Join("\n  - ", _warnings);
         }
         Result = new AIResult<List<int>>
         {
-          Success = true,
+          Success = created,
           Message = message,
           Response = elementIds,
         };

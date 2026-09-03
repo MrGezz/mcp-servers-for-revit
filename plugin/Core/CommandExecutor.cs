@@ -121,7 +121,12 @@ namespace revit_mcp_plugin.Core
                 }
                 catch (Exception ex)
                 {
-                    if (!IsOnMainThread)
+                    // Every command runs on the socket thread, so IsOnMainThread is false
+                    // for ALL of them; the thread hint is only right when the exception came
+                    // from the Revit API itself. A command's own deliberate error (unknown
+                    // category, timeout, bad argument) was being reported as an API
+                    // marshalling bug, which sent readers to the wrong place.
+                    if (!IsOnMainThread && ex is Autodesk.Revit.Exceptions.ApplicationException)
                     {
                         _logger.Error(
                             "Command {0} threw on a background thread (thread {1}, not the Revit " +

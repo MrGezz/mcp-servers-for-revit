@@ -1,33 +1,23 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { withRevitConnection } from "../utils/ConnectionManager.js";
+import { callRevit } from "../utils/reply.js";
 
 export function registerCreateSectionViewTool(server: McpServer) {
   server.tool(
     "create_section_view",
-    "Create a section view in Revit with a bounding box and view family type. All units in millimetres.",
+    "Create a section view (mm) with a bounding box and view family type. Returns the new view id.",
     {
-      name: z.string().optional().describe("View name"),
+      name: z.string().optional(),
       boundingBox: z.object({
-        minX: z.number().optional().default(-50000).describe("Min X in mm"),
-        minY: z.number().optional().default(-50000).describe("Min Y in mm"),
-        minZ: z.number().optional().default(-50000).describe("Min Z in mm"),
-        maxX: z.number().optional().default(50000).describe("Max X in mm"),
-        maxY: z.number().optional().default(50000).describe("Max Y in mm"),
-        maxZ: z.number().optional().default(50000).describe("Max Z in mm"),
-      }).optional().describe("Section bounding box"),
-      viewFamilyTypeName: z.string().optional().default("Section").describe("View family type name"),
+        minX: z.number().optional().default(-50000),
+        minY: z.number().optional().default(-50000),
+        minZ: z.number().optional().default(-50000),
+        maxX: z.number().optional().default(50000),
+        maxY: z.number().optional().default(50000),
+        maxZ: z.number().optional().default(50000),
+      }).optional().default({}),
+      viewFamilyTypeName: z.string().optional().default("Section"),
     },
-    async (args, extra) => {
-      const params = args;
-      try {
-        const response = await withRevitConnection(async (revitClient) => {
-          return await revitClient.sendCommand("create_section_view", params);
-        });
-        return { content: [{ type: "text", text: JSON.stringify(response, null, 2) }] };
-      } catch (error) {
-        return { content: [{ type: "text", text: `Create section view failed: ${error instanceof Error ? error.message : String(error)}` }] };
-      }
-    }
+    async (args) => callRevit("create_section_view", args)
   );
 }

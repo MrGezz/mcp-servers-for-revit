@@ -148,16 +148,25 @@ public class CreateDimensionEventHandler : WaitableEventHandlerBase, IExternalEv
 
                             if (references.Size >= 2)
                             {
-                                // Create dimension line with references
-                                var line = Line.CreateBound(startPoint, endPoint);
+                                // Create dimension line through linePoint: the component of
+                                // (linePoint - startPoint) perpendicular to the measured direction,
+                                // kept IN the view plane so a 3D linePoint cannot tilt the line
+                                // out of the view (Revit rejects that).
+                                var perpVec = linePoint - startPoint;
+                                var perpOffset = perpVec - dimensionDirection.Multiply(perpVec.DotProduct(dimensionDirection));
+                                perpOffset = perpOffset - view.ViewDirection.Multiply(perpOffset.DotProduct(view.ViewDirection));
+                                var line = Line.CreateBound(startPoint + perpOffset, endPoint + perpOffset);
                                 dimension = Doc.Create.NewDimension(view, line, references);
                             }
                         }
                         else
                         {
-                            // Create a simple dimension line between two points
-                            var line = Line.CreateBound(startPoint, endPoint);
+                            // Create a simple dimension line through linePoint (perpendicular offset)
                             var dimDirection = (endPoint - startPoint).Normalize();
+                            var perpVec2 = linePoint - startPoint;
+                            var perpOffset2 = perpVec2 - dimDirection.Multiply(perpVec2.DotProduct(dimDirection));
+                            perpOffset2 = perpOffset2 - view.ViewDirection.Multiply(perpOffset2.DotProduct(view.ViewDirection));
+                            var line = Line.CreateBound(startPoint + perpOffset2, endPoint + perpOffset2);
 
                             // Pick references from geometry in the view at those points
                             var refArray = new ReferenceArray();
@@ -200,11 +209,18 @@ public class CreateDimensionEventHandler : WaitableEventHandlerBase, IExternalEv
                 }
             }
 
-            // Set successful result
+            // Partial success stays a success (the created ids are real and usable);
+            // only "nothing created" is a failure.
+            var requested = DimensionsToCreate?.Count ?? 0;
+            var created = createdDimensionIds.Count;
             Result = new AIResult<List<int>>
             {
-                Success = true,
-                Message = $"Successfully created {createdDimensionIds.Count} dimensions. ElementIds saved in Response.",
+                Success = created > 0 || requested == 0,
+                Message = created == requested
+                    ? $"Successfully created {created} dimensions. ElementIds saved in Response."
+                    : created > 0
+                        ? $"Created {created} of {requested} dimensions; the rest had no resolvable references at their points."
+                        : $"No dimensions were created: none of the {requested} requested had two resolvable references. Pass elementIds, or start/end points that lie on element faces or edges in this view.",
                 Response = createdDimensionIds
             };
         }
@@ -482,13 +498,15 @@ public class CreateDimensionEventHandler : WaitableEventHandlerBase, IExternalEv
             var param = dimension.LookupParameter(option.Key);
             if (param == null) continue;
 
-            if (option.Value is double doubleValue && param.StorageType == StorageType.Double)
+            // JSON numbers arrive from Newtonsoft as double, JSON integers as long: test the
+            // storage type, then convert, or an integer-valued option is dropped silently.
+            if ((option.Value is double || option.Value is long || option.Value is int) && param.StorageType == StorageType.Double)
             {
-                param.Set(doubleValue * MILLIMETERS_TO_FEET);
+                param.Set(Convert.ToDouble(option.Value) * MILLIMETERS_TO_FEET);
             }
-            else if (option.Value is int intValue && param.StorageType == StorageType.Integer)
+            else if ((option.Value is int || option.Value is long) && param.StorageType == StorageType.Integer)
             {
-                param.Set(intValue);
+                param.Set(Convert.ToInt32(option.Value));
             }
             else if (option.Value is string stringValue && param.StorageType == StorageType.String)
             {

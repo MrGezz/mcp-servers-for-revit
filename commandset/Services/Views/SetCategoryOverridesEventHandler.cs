@@ -87,6 +87,12 @@ namespace RevitMCPCommandSet.Services.Views
                                 overrideSettings.SetSurfaceForegroundPatternId(fpElem.Id);
                                 overrideSettings.SetSurfaceForegroundPatternVisible(true);
                             }
+                            else
+                            {
+                                Result = new AIResult<bool> { Success = false, Message = $"Fill pattern '{fpName}' not found in document" };
+                                trans.RollBack();
+                                return;
+                            }
                         }
 
                         if (Overrides["halftone"] != null)

@@ -38,9 +38,12 @@ namespace RevitMCPCommandSet.Services.MEP
           int requestedTypeId = data.TypeId;
 
           Level baseLevel = doc.FindNearestLevel(data.BaseLevel / 304.8);
-          double baseOffset = (data.BaseOffset + data.BaseLevel) / 304.8 - baseLevel.Elevation;
           if (baseLevel == null)
+          {
+            _warnings.Add($"No level found near elevation {data.BaseLevel} mm. Conduit skipped.");
             continue;
+          }
+          double baseOffset = (data.BaseOffset + data.BaseLevel) / 304.8 - baseLevel.Elevation;
 
           ConduitType conduitType = null;
           if (data.TypeId != -1 && data.TypeId != 0)
@@ -60,10 +63,16 @@ namespace RevitMCPCommandSet.Services.MEP
           {
             using (var fec = new FilteredElementCollector(doc))
             {
-              conduitType = fec
+              var allConduitTypes = fec
                   .OfClass(typeof(ConduitType))
                   .Cast<ConduitType>()
-                  .FirstOrDefault();
+                  .ToList();
+
+              if (!string.IsNullOrEmpty(data.ConduitType))
+                conduitType = allConduitTypes.FirstOrDefault(ct => ct.Name.Equals(data.ConduitType, StringComparison.OrdinalIgnoreCase));
+
+              if (conduitType == null)
+                conduitType = allConduitTypes.FirstOrDefault();
             }
 
             if (conduitType == null)
@@ -72,9 +81,9 @@ namespace RevitMCPCommandSet.Services.MEP
               continue;
             }
             if (requestedTypeId != -1 && requestedTypeId != 0)
-            {
               _warnings.Add($"Requested conduit typeId {requestedTypeId} not found. Defaulted to '{conduitType.Name}' (ID: {conduitType.Id.GetValue()})");
-            }
+            else if (!string.IsNullOrEmpty(data.ConduitType))
+              _warnings.Add($"Conduit type name '{data.ConduitType}' not found. Defaulted to '{conduitType.Name}' (ID: {conduitType.Id.GetValue()})");
           }
 
           using (Transaction transaction = new Transaction(doc, "Create Conduit"))
@@ -94,6 +103,11 @@ namespace RevitMCPCommandSet.Services.MEP
               Parameter offsetParam = conduit.get_Parameter(BuiltInParameter.RBS_OFFSET_PARAM);
               if (offsetParam != null)
                 offsetParam.Set(baseOffset);
+
+              Parameter diamParam = conduit.get_Parameter(BuiltInParameter.RBS_CONDUIT_DIAMETER_PARAM);
+              if (diamParam != null)
+                diamParam.Set(data.Diameter / 304.8);
+
               elementIds.Add(conduit.Id.GetIntValue());
             }
 
@@ -101,14 +115,17 @@ namespace RevitMCPCommandSet.Services.MEP
           }
         }
 
-        string message = $"Successfully created {elementIds.Count} conduit(s).";
+        bool created = elementIds.Count > 0;
+        string message = created
+            ? $"Successfully created {elementIds.Count} conduit(s)."
+            : "Nothing was created.";
         if (_warnings.Count > 0)
         {
           message += "\n\nWarnings:\n  - " + string.Join("\n  - ", _warnings);
         }
         Result = new AIResult<List<int>>
         {
-          Success = true,
+          Success = created,
           Message = message,
           Response = elementIds,
         };

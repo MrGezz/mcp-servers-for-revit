@@ -77,8 +77,22 @@ namespace RevitMCPCommandSet.Services.Views
                     : ImageFileType.JPEGLossless;
                 imgOpts.ShadowViewsFileType = imgOpts.HLRandWFViewsFileType;
 
+                // Revit appends its own suffix to the file name, so the written file is
+                // found by globbing. Snapshot the folder FIRST: with several views sharing
+                // one fileName, a glob taken after each export returned every file written
+                // so far in the batch, so view 1 was listed N times and view 2 N-1 times.
+                string imgPattern = $"{fileName}*.{data.Format.ToLower()}";
+                var before = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+                if (System.IO.Directory.Exists(folderPath))
+                  foreach (var f in System.IO.Directory.GetFiles(folderPath, imgPattern))
+                    before[f] = System.IO.File.GetLastWriteTimeUtc(f);
                 doc.ExportImage(imgOpts);
-                exportedFiles.Add($"{fileName}.{data.Format.ToLower()}");
+                foreach (var f in System.IO.Directory.GetFiles(folderPath, imgPattern))
+                {
+                  DateTime was;
+                  bool isNew = !before.TryGetValue(f, out was) || System.IO.File.GetLastWriteTimeUtc(f) != was;
+                  if (isNew) exportedFiles.Add(System.IO.Path.GetFileName(f));
+                }
                 break;
               }
               case "DWG":
@@ -136,17 +150,30 @@ namespace RevitMCPCommandSet.Services.Views
           }
         }
 
-        string message = $"Successfully exported {exportedFiles.Count} file(s).";
-        if (_warnings.Count > 0)
+        if (exportedFiles.Count == 0)
         {
-          message += "\n\nWarnings:\n  - " + string.Join("\n  - ", _warnings);
+          string errMsg = "No files were exported.";
+          if (_warnings.Count > 0)
+            errMsg += "\n\nWarnings:\n  - " + string.Join("\n  - ", _warnings);
+          Result = new AIResult<List<string>>
+          {
+            Success = false,
+            Message = errMsg,
+            Response = exportedFiles,
+          };
         }
-        Result = new AIResult<List<string>>
+        else
         {
-          Success = true,
-          Message = message,
-          Response = exportedFiles,
-        };
+          string message = $"Successfully exported {exportedFiles.Count} file(s).";
+          if (_warnings.Count > 0)
+            message += "\n\nWarnings:\n  - " + string.Join("\n  - ", _warnings);
+          Result = new AIResult<List<string>>
+          {
+            Success = true,
+            Message = message,
+            Response = exportedFiles,
+          };
+        }
       }
       catch (Exception ex)
       {

@@ -1,42 +1,15 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { withRevitConnection } from "../utils/ConnectionManager.js";
+import { callRevit } from "../utils/reply.js";
+import { ElementId } from "../utils/schemas.js";
 
 export function registerQueryReferencesTool(server: McpServer) {
   server.tool(
     "query_references",
-    "Get stable geometric references of a Revit element for dimensioning and tagging. Returns face and edge references.",
+    "Get stable geometric references of a Revit element for dimensioning and tagging. Returns face references (AreaM2, in m2) and edge references (LengthMm, in mm).",
     {
-      elementId: z.number().int().describe("The element ID to get references for"),
+      elementId: ElementId,
     },
-    async (args, extra) => {
-      const params = { elementId: args.elementId };
-
-      try {
-        const response = await withRevitConnection(async (revitClient) => {
-          return await revitClient.sendCommand("query_references", params);
-        });
-
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(response, null, 2),
-            },
-          ],
-        };
-      } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Query references failed: ${
-                error instanceof Error ? error.message : String(error)
-              }`,
-            },
-          ],
-        };
-      }
-    }
+    async (args) => callRevit("query_references", { elementId: args.elementId })
   );
 }

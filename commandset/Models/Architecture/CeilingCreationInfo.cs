@@ -45,12 +45,10 @@ public class CeilingCreationInfo
     ///     Constructor with basic parameters
     /// </summary>
     /// <param name="level">Base level elevation (mm)</param>
-    /// <param name="thickness">Ceiling thickness (mm)</param>
     /// <param name="boundaryPoints">List of boundary points forming ceiling outline</param>
-    public CeilingCreationInfo(double level, double thickness, List<JZPoint> boundaryPoints)
+    public CeilingCreationInfo(double level, List<JZPoint> boundaryPoints)
     {
         Level = level;
-        Thickness = thickness;
         BoundaryPoints = boundaryPoints ?? new List<JZPoint>();
         Openings = new List<List<JZPoint>>();
         Options = new Dictionary<string, object>();
@@ -61,12 +59,6 @@ public class CeilingCreationInfo
     /// </summary>
     [JsonProperty("level")]
     public double Level { get; set; }
-
-    /// <summary>
-    ///     Ceiling thickness (mm)
-    /// </summary>
-    [JsonProperty("thickness")]
-    public double Thickness { get; set; }
 
     /// <summary>
     ///     Ceiling boundary points (mm)
@@ -97,12 +89,6 @@ public class CeilingCreationInfo
     /// </summary>
     [JsonProperty("ceilingType")]
     public string CeilingType { get; set; }
-
-    /// <summary>
-    ///     Ceiling material
-    /// </summary>
-    [JsonProperty("material")]
-    public string Material { get; set; }
 
     /// <summary>
     ///     Additional options

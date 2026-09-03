@@ -33,6 +33,8 @@ namespace RevitMCPCommandSet.Services.Modify
         public void Execute(UIApplication uiapp)
         {
             uiApp = uiapp;
+            _applied = 0;
+            _warnings.Clear();
 
             try
             {

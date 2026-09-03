@@ -1,35 +1,22 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { withRevitConnection } from "../utils/ConnectionManager.js";
+import { callRevit } from "../utils/reply.js";
+import { Pt } from "../utils/schemas.js";
 
 export function registerCreateColumnTool(server: McpServer) {
   server.tool(
     "create_column",
-    "Create columns in the Revit model. Supports structural columns with location, dimensions, levels, type, and material. All units in mm.",
+    "Creates structural columns in Revit (mm). Needs base level elevation per column. Optionally specify type by typeId or type name. Returns created element ids.",
     {
       data: z.array(z.object({
-        location: z.object({ x: z.number(), y: z.number(), z: z.number() }).describe("Column location in mm"),
-        height: z.number().describe("Column height in mm"),
-        width: z.number().optional().describe("Column width in mm"),
-        depth: z.number().optional().describe("Column depth in mm"),
+        location: Pt,
+        height: z.number(),
         baseLevel: z.number().describe("Base level elevation in mm"),
-        topLevel: z.number().optional().describe("Top level elevation in mm"),
-        typeId: z.number().optional().describe("Column type ID"),
-        columnType: z.string().optional().describe("Column type name"),
-        material: z.string().optional().describe("Column material"),
-        isStructural: z.boolean().optional().describe("Whether the column is structural"),
-      })).describe("Array of columns to create"),
+        typeId: z.number().optional().describe("Column type ElementId"),
+        type: z.string().optional().describe("Column type name"),
+        isStructural: z.boolean().optional(),
+      })),
     },
-    async (args, extra) => {
-      const params = args;
-      try {
-        const response = await withRevitConnection(async (revitClient) => {
-          return await revitClient.sendCommand("create_column", params);
-        });
-        return { content: [{ type: "text", text: JSON.stringify(response, null, 2) }] };
-      } catch (error) {
-        return { content: [{ type: "text", text: `Create column failed: ${error instanceof Error ? error.message : String(error)}` }] };
-      }
-    }
+    async (args) => callRevit("create_column", args)
   );
 }

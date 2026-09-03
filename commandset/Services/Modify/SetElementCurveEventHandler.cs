@@ -41,16 +41,8 @@ namespace RevitMCPCommandSet.Services.Modify
                     Result = new AIResult<bool> { Success = false, Message = "Element does not have a LocationCurve" };
                     return;
                 }
-                var p0 = new XYZ(
-                    StartPoint["x"]?.Value<double>() ?? 0,
-                    StartPoint["y"]?.Value<double>() ?? 0,
-                    StartPoint["z"]?.Value<double>() ?? 0
-                );
-                var p1 = new XYZ(
-                    EndPoint["x"]?.Value<double>() ?? 0,
-                    EndPoint["y"]?.Value<double>() ?? 0,
-                    EndPoint["z"]?.Value<double>() ?? 0
-                );
+                var p0 = GeometryUtils.ConvertToXYZ(StartPoint.ToObject<JZPoint>());
+                var p1 = GeometryUtils.ConvertToXYZ(EndPoint.ToObject<JZPoint>());
                 using (var trans = new Transaction(Doc, "Set Element Curve"))
                 {
                     trans.Start();

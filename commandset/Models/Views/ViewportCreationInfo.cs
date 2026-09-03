@@ -69,7 +69,7 @@ public class ViewportCreationInfo
     public int ViewportTypeId { get; set; }
 
     /// <summary>
-    ///     Whether to display the view title
+    ///     Sets VIEWPORT_DETAIL_NUMBER to 0 (true) or 1 (false); does not control title visibility
     /// </summary>
     [JsonProperty("displayTitle")]
     public bool? DisplayTitle { get; set; }
@@ -81,13 +81,7 @@ public class ViewportCreationInfo
     public int ScaleOverride { get; set; }
 
     /// <summary>
-    ///     Viewport label text
-    /// </summary>
-    [JsonProperty("labelText")]
-    public string LabelText { get; set; } = string.Empty;
-
-    /// <summary>
-    ///     Rotation angle in degrees
+    ///     ViewportRotation enum cast: 0=None, 1=Clockwise, 2=CounterClockwise
     /// </summary>
     [JsonProperty("rotation")]
     public double Rotation { get; set; }

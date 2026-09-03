@@ -3,8 +3,13 @@ using Newtonsoft.Json;
 namespace RevitMCPCommandSet.Models.DataExtraction
 {
     /// <summary>
-    /// Model for material quantity data
+    /// Model for material quantity data.
     /// </summary>
+    /// <remarks>
+    /// UNITS ARE IN THE KEY NAMES. "area" and "volume" used to carry Revit's
+    /// internal square feet and cubic feet while the tool promised metric; the
+    /// handler now converts and the keys say so.
+    /// </remarks>
     public class MaterialQuantityModel
     {
         [JsonProperty("materialId")]
@@ -16,11 +21,13 @@ namespace RevitMCPCommandSet.Models.DataExtraction
         [JsonProperty("materialClass")]
         public string MaterialClass { get; set; }
 
-        [JsonProperty("area")]
-        public double Area { get; set; } // Square feet
+        /// <summary>Square metres.</summary>
+        [JsonProperty("areaM2")]
+        public double Area { get; set; }
 
-        [JsonProperty("volume")]
-        public double Volume { get; set; } // Cubic feet
+        /// <summary>Cubic metres.</summary>
+        [JsonProperty("volumeM3")]
+        public double Volume { get; set; }
 
         [JsonProperty("elementCount")]
         public int ElementCount { get; set; }
@@ -37,10 +44,12 @@ namespace RevitMCPCommandSet.Models.DataExtraction
         [JsonProperty("totalMaterials")]
         public int TotalMaterials { get; set; }
 
-        [JsonProperty("totalArea")]
+        /// <summary>Square metres.</summary>
+        [JsonProperty("totalAreaM2")]
         public double TotalArea { get; set; }
 
-        [JsonProperty("totalVolume")]
+        /// <summary>Cubic metres.</summary>
+        [JsonProperty("totalVolumeM3")]
         public double TotalVolume { get; set; }
 
         [JsonProperty("materials")]

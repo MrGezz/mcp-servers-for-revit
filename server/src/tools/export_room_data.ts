@@ -1,54 +1,19 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { withRevitConnection } from "../utils/ConnectionManager.js";
+import { callRevit } from "../utils/reply.js";
 
 export function registerExportRoomDataTool(server: McpServer) {
   server.tool(
     "export_room_data",
-    "Export all room data from the current Revit project. Returns detailed information about each room including name, number, level, area, volume, perimeter, department, and more. Useful for generating room schedules, space analysis, and facility management data.",
+    "Export every placed, enclosed room: id, name, number, level, areaM2, volumeM3, perimeterMm, unboundedHeightMm, department, phase, occupancy, status. Add unplaced rooms (no location) or not-enclosed rooms (placed, zero area) with the flags.",
     {
-      includeUnplacedRooms: z
-        .boolean()
-        .optional()
-        .default(false)
-        .describe("Whether to include unplaced rooms (rooms not yet placed in the model). Defaults to false."),
-      includeNotEnclosedRooms: z
-        .boolean()
-        .optional()
-        .default(false)
-        .describe("Whether to include rooms that are not fully enclosed. Defaults to false."),
+      includeUnplacedRooms: z.boolean().optional().default(false).describe("Also list rooms with no location"),
+      includeNotEnclosedRooms: z.boolean().optional().default(false).describe("Also list placed rooms with zero area"),
     },
-    async (args, extra) => {
-      const params = {
+    async (args) =>
+      callRevit("export_room_data", {
         includeUnplacedRooms: args.includeUnplacedRooms ?? false,
         includeNotEnclosedRooms: args.includeNotEnclosedRooms ?? false,
-      };
-
-      try {
-        const response = await withRevitConnection(async (revitClient) => {
-          return await revitClient.sendCommand("export_room_data", params);
-        });
-
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(response, null, 2),
-            },
-          ],
-        };
-      } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Export room data failed: ${
-                error instanceof Error ? error.message : String(error)
-              }`,
-            },
-          ],
-        };
-      }
-    }
+      })
   );
 }

@@ -59,7 +59,11 @@ namespace RevitMCPCommandSet.Services.Architecture
                 {
                     Level baseLevel = FindNearestLevel(info.BaseLevel / 304.8);
                     Level topLevel = FindNearestLevel(info.TopLevel / 304.8);
-                    if (baseLevel == null || topLevel == null) continue;
+                    if (baseLevel == null || topLevel == null)
+                    {
+                        _warnings.Add($"No level found near base elevation {info.BaseLevel} mm or top elevation {info.TopLevel} mm, skipping stair.");
+                        continue;
+                    }
 
                     using (Transaction tx = new Transaction(_doc, "Create Stair"))
                     {
@@ -217,7 +221,10 @@ namespace RevitMCPCommandSet.Services.Architecture
                     }
                 }
 
-                string message = $"Successfully created {elementIds.Count} stair(s)";
+                bool created = elementIds.Count > 0;
+                string message = created
+                    ? $"Successfully created {elementIds.Count} stair(s)"
+                    : "Nothing was created.";
                 if (_warnings.Count > 0)
                 {
                     message += "\nWarnings:\n  " + string.Join("\n  ", _warnings);

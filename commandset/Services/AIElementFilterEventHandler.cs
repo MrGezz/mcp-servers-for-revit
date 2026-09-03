@@ -238,8 +238,7 @@ namespace RevitMCPCommandSet.Services
                 }
                 else
                 {
-                    string elementType = symbolElement != null ? symbolElement.GetType().Name : "not found";
-                    System.Diagnostics.Trace.WriteLine($"Warning: element with ID {settings.FilterFamilySymbolId} {(symbolElement == null ? "does not exist" : "is not a valid FamilySymbol")} (actual type: {elementType})");
+                    throw new Exception($"Element with ID {settings.FilterFamilySymbolId} is not a valid FamilySymbol (actual type: {(symbolElement != null ? symbolElement.GetType().Name : "not found")}). Cannot apply family symbol filter.");
                 }
             }
             // 4. Bounding-box spatial filter

@@ -40,6 +40,13 @@ namespace RevitMCPCommandSet.Services.Views
                     }
 
                     ElementId templateId = VersionCompat.CreateViewTemplate(doc, sourceView.Id);
+
+                    if (templateId == ElementId.InvalidElementId)
+                    {
+                        Result = new AIResult<int> { Success = false, Message = "CreateViewTemplate returned an invalid element id" };
+                        return;
+                    }
+
                     View templateView = doc.GetElement(templateId) as View;
 
                     if (!string.IsNullOrEmpty(TemplateName) && templateView != null)

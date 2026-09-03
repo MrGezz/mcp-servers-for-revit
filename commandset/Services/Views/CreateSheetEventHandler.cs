@@ -141,12 +141,19 @@ namespace RevitMCPCommandSet.Services.Views
 
                             sheetIds.Add(sheet.Id.GetIntValue());
                         }
+                        else
+                        {
+                            _warnings.Add($"Failed to create sheet (sheet number: '{info.SheetNumber ?? "N/A"}', name: '{info.SheetName ?? "N/A"}'). ViewSheet.Create returned null.");
+                        }
 
                         trans.Commit();
                     }
                 }
 
-                string message = $"Successfully created {sheetIds.Count} sheet(s).";
+                bool created = sheetIds.Count > 0;
+                string message = created
+                    ? $"Successfully created {sheetIds.Count} sheet(s)."
+                    : "Nothing was created.";
                 if (_warnings.Count > 0)
                 {
                     message += "\n\nWarnings:\n  - " + string.Join("\n  - ", _warnings);
@@ -154,7 +161,7 @@ namespace RevitMCPCommandSet.Services.Views
 
                 Result = new AIResult<List<int>>
                 {
-                    Success = true,
+                    Success = created,
                     Message = message,
                     Response = sheetIds,
                 };

@@ -144,12 +144,21 @@ namespace RevitMCPCommandSet.Services.Annotation
                         {
                             elementIds.Add(tag.Id.GetIntValue());
                         }
+                        else
+                        {
+                            // IndependentTag.Create returns null rather than throwing for an
+                            // element it cannot tag in this view; say so, or the batch looks fine.
+                            _warnings.Add($"Element {data.ElementId} could not be tagged in this view (IndependentTag.Create returned null).");
+                        }
 
                         trans.Commit();
                     }
                 }
 
-                string message = $"Successfully created {elementIds.Count} tag(s).";
+                bool created = elementIds.Count > 0;
+                string message = created
+                    ? $"Successfully created {elementIds.Count} tag(s)."
+                    : "Nothing was created.";
                 if (_warnings.Count > 0)
                 {
                     message += "\n\nWarnings:\n  - " + string.Join("\n  - ", _warnings);
@@ -157,7 +166,7 @@ namespace RevitMCPCommandSet.Services.Annotation
 
                 Result = new AIResult<List<int>>
                 {
-                    Success = true,
+                    Success = created,
                     Message = message,
                     Response = elementIds,
                 };

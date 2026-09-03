@@ -44,15 +44,21 @@ namespace RevitMCPCommandSet.Services.DataExtraction
                         .Cast<Room>()
                         .ToList();
 
+                // Revit internal units are feet. Every tool in this set promises
+                // metric, so convert here, once, at the source.
+                const double FT_TO_MM = 304.8;
+                const double FT2_TO_M2 = 0.09290304;
+                const double FT3_TO_M3 = 0.028316846592;
+
                 foreach (Room room in roomCollector)
                 {
-                    // Skip unplaced rooms if not included
-                    if (!_includeUnplacedRooms && room.Area == 0)
-                        continue;
-
-                    // Skip not enclosed rooms if not included
-                    if (!_includeNotEnclosedRooms && room.Area == 0)
-                        continue;
+                    // Three states, two of them "zero area". Previously both flags
+                    // tested the same condition (Area == 0), so asking for unplaced
+                    // rooms alone still returned nothing and reported success.
+                    bool unplaced = room.Location == null;
+                    bool notEnclosed = !unplaced && room.Area <= 0;
+                    if (unplaced && !_includeUnplacedRooms) continue;
+                    if (notEnclosed && !_includeNotEnclosedRooms) continue;
 
                     var roomData = new RoomDataModel
                     {
@@ -61,18 +67,19 @@ namespace RevitMCPCommandSet.Services.DataExtraction
                         Name = room.get_Parameter(BuiltInParameter.ROOM_NAME)?.AsString() ?? "",
                         Number = room.Number ?? "",
                         Level = room.Level?.Name ?? "No Level",
-                        Area = room.Area, // Already in square feet
-                        Volume = room.Volume, // Already in cubic feet
-                        Perimeter = room.Perimeter, // Already in feet
-                        UnboundedHeight = room.UnboundedHeight, // Already in feet
+                        Area = Math.Round(room.Area * FT2_TO_M2, 3),
+                        Volume = Math.Round(room.Volume * FT3_TO_M3, 3),
+                        Perimeter = Math.Round(room.Perimeter * FT_TO_MM, 1),
+                        UnboundedHeight = Math.Round(room.UnboundedHeight * FT_TO_MM, 1),
                         Department = room.get_Parameter(BuiltInParameter.ROOM_DEPARTMENT)?.AsString() ?? "",
                         Comments = room.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS)?.AsString() ?? "",
                         Phase = doc.GetElement(room.get_Parameter(BuiltInParameter.ROOM_PHASE)?.AsElementId())?.Name ?? "",
-                        Occupancy = room.get_Parameter(BuiltInParameter.ROOM_OCCUPANCY)?.AsString() ?? ""
+                        Occupancy = room.get_Parameter(BuiltInParameter.ROOM_OCCUPANCY)?.AsString() ?? "",
+                        Status = unplaced ? "unplaced" : notEnclosed ? "not enclosed" : "placed"
                     };
 
                     rooms.Add(roomData);
-                    totalArea += room.Area;
+                    totalArea += roomData.Area;
                 }
 
                 // Two fixes here.

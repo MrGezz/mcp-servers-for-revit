@@ -3,9 +3,9 @@
 
     Five checks, each chosen because it catches something the others cannot:
 
-      1. YEARS    - the supported Revit versions are declared in SEVEN places
+      1. YEARS    - the supported Revit versions are declared in EIGHT places
                     (two .csproj, the .sln, release.yml, Package.ps1, and the
-                    .iss twice). Nothing makes them agree. A year added to the
+                    .iss three times). Nothing makes them agree. A year added to the
                     csproj but not the .iss builds fine and then silently ships
                     an installer that cannot deploy it.
 
@@ -59,7 +59,7 @@ function Fail {
 }
 
 # ============================================================== 1. YEARS
-Section 'YEARS - the seven declarations must agree'
+Section 'YEARS - the year declarations must agree'
 
 function YearsFrom([string] $Text, [string] $Pattern) {
     $found = [regex]::Matches($Text, $Pattern) | ForEach-Object { $_.Groups[1].Value }
@@ -201,6 +201,18 @@ if ($SkipServer) {
         } else {
             Fail 'dynamo harness' (($h | Where-Object { $_ -match '^FAIL' } | Select-Object -First 3) -join ' | ')
         }
+
+        # Reply helpers + tool catalogue. Every tool passes through these, so
+        # this is the one harness that covers all ~100 tools at once.
+        $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+        $u = & node (Join-Path $server 'build\utils\selfTest.js') 2>&1 | ForEach-Object { "$_" }
+        $ErrorActionPreference = $prev
+        $uline = ($u | Where-Object { $_ -match '^\d+ passed, \d+ failed' } | Select-Object -Last 1)
+        if ($uline -match '^(\d+) passed, (\d+) failed' -and $Matches[2] -eq '0') {
+            Pass "reply/catalog harness ($($Matches[1]) checks)"
+        } else {
+            Fail 'reply/catalog harness' (($u | Where-Object { $_ -match 'FAIL' } | Select-Object -First 3) -join ' | ')
+        }
     }
 }
 
@@ -290,6 +302,9 @@ $lintCode = $LASTEXITCODE
 $ErrorActionPreference = $prev
 if ($lintCode -ne 0) { $failed += 'installer script lint' } else { $passed += 2 }
 $iscc = @(
+    "$env:LOCALAPPDATA\Programs\Inno Setup 7\ISCC.exe",
+    "${env:ProgramFiles(x86)}\Inno Setup 7\ISCC.exe",
+    "$env:ProgramFiles\Inno Setup 7\ISCC.exe",
     "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe",
     "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
     "$env:ProgramFiles\Inno Setup 6\ISCC.exe"

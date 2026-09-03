@@ -47,7 +47,7 @@ namespace RevitMCPCommandSet.Services.Query
                         Parameter = item.Name,
                         LevelId = levelId.GetIntValue(),
                         LevelName = level?.Name ?? "None",
-                        Offset = offset
+                        OffsetMm = offset * 304.8
                     });
                 }
 

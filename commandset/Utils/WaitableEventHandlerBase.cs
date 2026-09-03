@@ -32,6 +32,26 @@ namespace RevitMCPCommandSet.Utils
 
         private bool _disposed;
 
+        /// <summary>
+        /// Clear the completion signal. MUST be called before the external event is
+        /// raised, every time.
+        /// </summary>
+        /// <remarks>
+        /// <see cref="ExternalEventCommandBase.RaiseAndWaitForCompletion"/> is
+        /// Raise() then WaitOne(). A ManualResetEvent stays signalled after Set(),
+        /// so a handler that never resets it makes every call after the first
+        /// return IMMEDIATELY with the PREVIOUS call's result — measured live on
+        /// dynamo_op, and the same shape existed in delete_element,
+        /// get_selected_elements, get_current_view_info,
+        /// get_available_family_types and say_hello. Handlers that expose a
+        /// SetParameters-style method reset inside it; the rest call this.
+        /// </remarks>
+        public void ResetCompletion()
+        {
+            if (_disposed) return;
+            _resetEvent.Reset();
+        }
+
         public void Dispose()
         {
             Dispose(true);

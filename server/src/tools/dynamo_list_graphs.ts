@@ -1,23 +1,19 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { ok, fail, errorMessage } from "../utils/reply.js";
 import { listGraphFiles, readGraph } from "../dynamo/DynGraph.js";
 
 export function registerDynamoListGraphsTool(server: McpServer) {
   server.tool(
     "dynamo_list_graphs",
-    "List the Dynamo graphs (.dyn) and custom nodes (.dyf) under a folder, optionally with each " +
-      "graph's name, description, node count and package dependencies. Use this to answer " +
-      "'which of my graphs already does X' before writing a new one. Revit does not need to be running.",
+    "List Dynamo graphs (.dyn) and custom nodes (.dyf) under a folder. Revit does not need to be running. With describe:true, also returns name, description, node count, and package dependencies.",
     {
       folder: z.string().describe("Absolute path to the folder to scan."),
       recursive: z.boolean().optional().describe("Descend into subfolders. Default true."),
       describe: z
         .boolean()
         .optional()
-        .describe(
-          "Open each graph to report its name, description, node count and packages. " +
-            "Slower on large folders; default false."
-        ),
+        .describe("Include name, description, nodes, packages. Default false."),
       limit: z.number().optional().describe("Maximum files to return. Default 200."),
     },
     async (args) => {
@@ -26,9 +22,7 @@ export function registerDynamoListGraphsTool(server: McpServer) {
         const files = await listGraphFiles(args.folder, args.recursive !== false, limit);
 
         if (files.length === 0) {
-          return {
-            content: [{ type: "text", text: `No .dyn or .dyf files found under ${args.folder}.` }],
-          };
+          return ok(`No .dyn or .dyf files found under ${args.folder}.`);
         }
 
         const lines: string[] = [`${files.length} file(s) under ${args.folder}`, ""];
@@ -55,7 +49,7 @@ export function registerDynamoListGraphsTool(server: McpServer) {
               `      ${nodeCount} nodes · packages: ${packages.length ? packages.join(", ") : "none"}`
             );
           } catch (error) {
-            lines.push(`[!!]  ${f.name} — could not be read: ${error instanceof Error ? error.message : String(error)}`);
+            lines.push(`[!!]  ${f.name} — could not be read: ${errorMessage(error)}`);
             lines.push(`      ${f.path}`);
           }
         }
@@ -64,16 +58,9 @@ export function registerDynamoListGraphsTool(server: McpServer) {
           lines.push("", `Stopped at the limit of ${limit}. Raise "limit" to see more.`);
         }
 
-        return { content: [{ type: "text", text: lines.join("\n") }] };
+        return ok(lines.join("\n"));
       } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `dynamo_list_graphs failed: ${error instanceof Error ? error.message : String(error)}`,
-            },
-          ],
-        };
+        return fail(`dynamo_list_graphs failed: ${errorMessage(error)}`);
       }
     }
   );

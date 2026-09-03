@@ -34,6 +34,10 @@ namespace RevitMCPCommandSet.Commands.Access
         {
             lock (_executionLock)
             {
+                // Clear the previous completion signal, or this returns the LAST
+                // call's view info without reaching the handler at all.
+                _handler.ResetCompletion();
+
                 // Raise the external event and wait for completion
                 if (RaiseAndWaitForCompletion(10000)) // 10-second timeout
                 {

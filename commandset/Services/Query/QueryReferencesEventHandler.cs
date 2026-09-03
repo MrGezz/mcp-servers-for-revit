@@ -58,7 +58,7 @@ namespace RevitMCPCommandSet.Services.Query
                             {
                                 Type = "Face",
                                 Reference = face.Reference.ConvertToStableRepresentation(Doc),
-                                Area = face.Area,
+                                AreaM2 = face.Area * 0.09290304,
                                 SurfaceType = VersionCompat.GetSurfaceTypeName(face)
                             });
                         }
@@ -72,7 +72,7 @@ namespace RevitMCPCommandSet.Services.Query
                                     {
                                         Type = "Edge",
                                         Reference = edge.Reference.ConvertToStableRepresentation(Doc),
-                                        Length = edge.ApproximateLength,
+                                        LengthMm = edge.ApproximateLength * 304.8,
                                         CurveType = edge.AsCurve()?.GetType().Name
                                     });
                                 }

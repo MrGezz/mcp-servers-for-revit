@@ -276,6 +276,70 @@ export async function readGraph(filePath: string): Promise<LoadedGraph> {
   };
 }
 
+/**
+ * A new, empty Dynamo 3 graph, shaped like one Dynamo itself just saved.
+ *
+ * Exists because every edit operation needs a file to edit, and an AI client
+ * (Claude Desktop, say) usually cannot write files itself: "create a graph
+ * that ..." had no starting point. The shape mirrors a Dynamo 3.x save; the
+ * Version is an early 3.x that already carries the Properties extension
+ * block, so any Dynamo 3 opens it without a migration prompt.
+ */
+export function newGraph(filePath: string, name?: string): LoadedGraph {
+  const doc: DynDocument = {
+    Uuid: randomUUID(),
+    IsCustomNode: false,
+    Description: "",
+    Name: name ?? path.basename(filePath).replace(/\.dy[nf]$/i, ""),
+    ElementResolver: { ResolutionMap: {} },
+    Inputs: [],
+    Outputs: [],
+    Nodes: [],
+    Connectors: [],
+    Dependencies: [],
+    NodeLibraryDependencies: [],
+    EnableLegacyPolyCurveBehavior: true,
+    Thumbnail: "",
+    GraphDocumentationURL: null,
+    ExtensionWorkspaceData: [
+      { ExtensionGuid: "28992e1d-abb9-417f-8b1b-05e053bee670", Name: "Properties", Version: "3.2", Data: {} },
+    ],
+    Author: "None provided",
+    Linting: { activeLinter: "None", activeLinterId: "7b75fb44-43fd-4631-a878-29f4d5d8399a", warningCount: 0, errorCount: 0 },
+    Bindings: [],
+    View: {
+      Dynamo: {
+        ScaleFactor: 1.0,
+        HasRunWithoutCrash: true,
+        IsVisibleInDynamoLibrary: true,
+        Version: "3.2.0.4933",
+        RunType: "Manual",
+        RunPeriod: "1000",
+      },
+      Camera: {
+        Name: "_Background Preview",
+        EyeX: -17.0, EyeY: 24.0, EyeZ: 50.0,
+        LookX: 12.0, LookY: -13.0, LookZ: -58.0,
+        UpX: 0.0, UpY: 1.0, UpZ: 0.0,
+      },
+      ConnectorPins: [],
+      NodeViews: [],
+      Annotations: [],
+      X: 0.0,
+      Y: 0.0,
+      Zoom: 1.0,
+    },
+  };
+  return {
+    filePath,
+    doc,
+    originalBytes: 0,
+    trailingNewline: false,
+    eol: "LF",
+    numberFidelity: NUMBER_FIDELITY_AVAILABLE,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Writing
 // ---------------------------------------------------------------------------
@@ -634,7 +698,10 @@ export function addPythonNode(
   options?: { engine?: string; inputCount?: number; position?: { x: number; y: number } }
 ): DynNode {
   const id = newId();
-  const inputCount = Math.max(0, options?.inputCount ?? 1);
+  // At least one IN[] port: Dynamo's own UI never lets the last one be removed,
+  // and a Python node saved with none made OpenFileFromPath throw a
+  // NullReferenceException (measured on Dynamo 3.6).
+  const inputCount = Math.max(1, options?.inputCount ?? 1);
 
   const node: DynNode = {
     ConcreteType: "PythonNodeModels.PythonNode, PythonNodeModels",
@@ -683,6 +750,91 @@ export function addPythonNode(
     Y: options?.position?.y ?? 0,
   });
 
+  return node;
+}
+
+/**
+ * Add a library ("zero-touch") node such as Data.OpenXMLExportExcel or
+ * List.Transpose by its DesignScript signature.
+ *
+ * Exists because a graph that only has Code Blocks and Python nodes is not
+ * the graph a Dynamo user recognises: the stock nodes ARE the language. The
+ * signature is the string Dynamo itself saves as FunctionSignature, e.g.
+ * "DSOffice.Data.OpenXMLExportExcel@string,string,var[][],int,int,bool,bool";
+ * a graph that already uses the node shows it under dynamo_read_graph
+ * format:"json". Inputs listed in `defaults` keep the function's default
+ * value and need no connector.
+ */
+export function addFunctionNode(
+  doc: DynDocument,
+  signature: string,
+  options: {
+    inputs: string[];
+    outputs?: string[];
+    defaults?: string[];
+    name?: string;
+    position?: { x: number; y: number };
+  }
+): DynNode {
+  const at = signature.indexOf("@");
+  const fullName = at >= 0 ? signature.slice(0, at) : signature;
+  if (!/^[A-Za-z_][\w.]*$/.test(fullName)) {
+    throw new Error(`"${signature}" is not a DesignScript signature (expected Namespace.Class.Method@type,type,...).`);
+  }
+  const argTypes = at >= 0 && signature.length > at + 1 ? signature.slice(at + 1).split(",") : [];
+  if (argTypes.length !== options.inputs.length) {
+    throw new Error(
+      `${fullName} takes ${argTypes.length} argument(s) by its signature but ${options.inputs.length} input name(s) were given.`
+    );
+  }
+  const defaults = new Set(options.defaults ?? []);
+  for (const d of defaults) {
+    if (!options.inputs.includes(d)) throw new Error(`"${d}" is in defaults but not in inputs.`);
+  }
+
+  const id = newId();
+  const shortName = fullName.split(".").slice(-2).join(".");
+  const node: DynNode = {
+    ConcreteType: "Dynamo.Graph.Nodes.ZeroTouch.DSFunction, DynamoCore",
+    NodeType: "FunctionNode",
+    FunctionSignature: signature,
+    Id: id,
+    Inputs: options.inputs.map((name, i) => ({
+      Id: newId(),
+      Name: name,
+      Description: argTypes[i] ?? "",
+      UsingDefaultValue: defaults.has(name),
+      Level: 2,
+      UseLevels: false,
+      KeepListStructure: false,
+    })),
+    Outputs: (options.outputs?.length ? options.outputs : ["var"]).map((name) => ({
+      Id: newId(),
+      Name: name,
+      Description: "",
+      UsingDefaultValue: false,
+      Level: 2,
+      UseLevels: false,
+      KeepListStructure: false,
+    })),
+    Replication: "Auto",
+    Description: shortName,
+  };
+
+  if (!Array.isArray(doc.Nodes)) doc.Nodes = [];
+  doc.Nodes.push(node);
+  if (!doc.View) doc.View = {};
+  if (!Array.isArray(doc.View.NodeViews)) doc.View.NodeViews = [];
+  doc.View.NodeViews.push({
+    Id: id,
+    Name: options.name ?? shortName,
+    IsSetAsInput: false,
+    IsSetAsOutput: false,
+    Excluded: false,
+    ShowGeometry: true,
+    X: options.position?.x ?? 0,
+    Y: options.position?.y ?? 0,
+  });
   return node;
 }
 

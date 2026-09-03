@@ -133,18 +133,30 @@ namespace RevitMCPCommandSet.Services.Architecture
                     }
                 }
 
-                string message = $"Successfully created {elementIds.Count} wall(s)";
-                if (_warnings.Count > 0)
+                if (elementIds.Count == 0 && WallData.Count > 0)
                 {
-                    message += "\nWarnings:\n  " + string.Join("\n  ", _warnings);
+                    string errorMsg = "Failed to create any walls";
+                    if (_warnings.Count > 0)
+                        errorMsg += ": " + string.Join("; ", _warnings);
+                    Result = new AIResult<List<int>>
+                    {
+                        Success = false,
+                        Message = errorMsg,
+                        Response = elementIds
+                    };
                 }
-
-                Result = new AIResult<List<int>>
+                else
                 {
-                    Success = true,
-                    Message = message,
-                    Response = elementIds
-                };
+                    string message = $"Successfully created {elementIds.Count} wall(s)";
+                    if (_warnings.Count > 0)
+                        message += "\nWarnings:\n  " + string.Join("\n  ", _warnings);
+                    Result = new AIResult<List<int>>
+                    {
+                        Success = true,
+                        Message = message,
+                        Response = elementIds
+                    };
+                }
             }
             catch (Exception ex)
             {

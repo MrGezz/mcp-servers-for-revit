@@ -32,7 +32,7 @@ namespace RevitMCPCommandSet.Commands.Views
                 {
                     int viewId = parameters["viewId"]?.Value<int>() ?? 0;
                     double topOffset = parameters["topOffset"]?.Value<double>() ?? 0;
-                    double cutOffset = parameters["cutOffset"]?.Value<double>() ?? 0;
+                    double cutOffset = parameters["cutOffset"]?.Value<double>() ?? 1200;
                     double bottomOffset = parameters["bottomOffset"]?.Value<double>() ?? 0;
                     double viewDepthOffset = parameters["viewDepthOffset"]?.Value<double>() ?? 0;
                     int? topLevelId = parameters["topLevelId"]?.Value<int>();

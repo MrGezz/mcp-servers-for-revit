@@ -30,6 +30,12 @@ namespace RevitMCPCommandSet.Services
         {
             try
             {
+                // Clear the previous call's outcome. ErrorMessage survives on the handler
+                // instance for the whole Revit session, so without this one failed call
+                // (an unknown category, say) made every later call fail with the same
+                // message - measured live on get_available_family_types.
+                ErrorMessage = null;
+                ResultElements = null;
                 var uiDoc = app.ActiveUIDocument;
                 var doc = uiDoc.Document;
 

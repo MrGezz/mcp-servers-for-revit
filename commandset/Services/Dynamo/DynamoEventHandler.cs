@@ -72,14 +72,20 @@ namespace RevitMCPCommandSet.Services.Dynamo
                     case "status":
                         Result = Status();
                         break;
+                    case "launch":
+                        Result = Launch(app);
+                        break;
                     case "open":
                         Result = Open();
                         break;
                     case "run":
                         Result = Run();
                         break;
+                    case "eval_status":
+                        Result = EvalStatus();
+                        break;
                     default:
-                        Result = Fail($"Unknown op \"{Op}\". Known ops: status, open, run.");
+                        Result = Fail($"Unknown op \"{Op}\". Known ops: status, launch, open, run, eval_status.");
                         break;
                 }
             }
@@ -193,9 +199,30 @@ namespace RevitMCPCommandSet.Services.Dynamo
         /// Duck-typing rather than a type check: the concrete DynamoModel type
         /// differs between builds, but a model always has a CurrentWorkspace.
         /// </summary>
+        /// <remarks>
+        /// A model that has been SHUT DOWN also passes this test. When the
+        /// Dynamo window is closed, DynamoRevit keeps the static
+        /// RevitDynamoModel but disposes its EngineController and Scheduler;
+        /// every OpenFileFromPath on it then throws NullReferenceException
+        /// from inside OpenJsonFileFromPath (measured on Dynamo 3.6, after the
+        /// user closed the window between two MCP calls). So "reachable" here
+        /// also means the engine is alive; a dead one reports as not running,
+        /// and launch posts the ribbon command again, which rebuilds it.
+        /// </remarks>
         private static bool LooksLikeModel(object candidate)
         {
-            return candidate != null && candidate.GetType().GetProperty("CurrentWorkspace") != null;
+            return candidate != null
+                && candidate.GetType().GetProperty("CurrentWorkspace") != null
+                && EngineAlive(candidate);
+        }
+
+        /// <summary>True unless the model exposes an EngineController and it is null.</summary>
+        private static bool EngineAlive(object model)
+        {
+            PropertyInfo engine = model.GetType().GetProperty("EngineController");
+            if (engine == null) return true;     // unknown build: cannot tell, assume alive
+            try { return engine.GetValue(model) != null; }
+            catch (Exception) { return false; }
         }
 
         private static object CurrentWorkspace(object model)
@@ -239,9 +266,67 @@ namespace RevitMCPCommandSet.Services.Dynamo
             }
             if (model == null)
             {
-                return Ok("Dynamo is installed but its model is not reachable yet. This is the ordinary state until Dynamo has been opened once from the Manage ribbon.", data);
+                return Ok("Dynamo is installed but not running yet (or its window was closed). Send op \"launch\" to start it (no user action needed), then poll status until model_reachable is true.", data);
             }
             return Ok("Dynamo is reachable.", data);
+        }
+
+        /// <summary>
+        /// Start Dynamo without anyone clicking the ribbon.
+        /// </summary>
+        /// <remarks>
+        /// COLD START. The model only exists once Dynamo has been opened, and
+        /// until now that meant a human clicking Manage > Dynamo before any graph
+        /// could be opened or run from the MCP side. Revit exposes that button as
+        /// the postable command ID_VISUAL_PROGRAMMING_DYNAMO (measured on Revit
+        /// 2026 via Autodesk.Windows; LookupCommandId resolves it), and PostCommand
+        /// queues it to run as soon as this external event returns — the exact
+        /// equivalent of the click, including the Dynamo version selector if more
+        /// than one Dynamo is installed.
+        ///
+        /// Because the command runs AFTER this handler returns, the model is not
+        /// reachable yet when we reply. The MCP server polls status until it is
+        /// (measured: ~14 s on this machine).
+        /// </remarks>
+        private Dictionary<string, object> Launch(UIApplication app)
+        {
+            List<string> tried;
+            object model = FindModel(out tried);
+            if (model != null)
+            {
+                return Ok("Dynamo is already running.", new Dictionary<string, object>
+                {
+                    { "launched", false },
+                    { "model_reachable", true },
+                    { "current_workspace", WorkspaceName(CurrentWorkspace(model)) },
+                });
+            }
+
+            if (!DynamoAssemblies().Any())
+            {
+                return Fail("Dynamo assemblies are not in this Revit's AppDomain — DynamoForRevit does not appear to be installed.");
+            }
+
+            const string commandName = "ID_VISUAL_PROGRAMMING_DYNAMO";
+            RevitCommandId commandId = RevitCommandId.LookupCommandId(commandName);
+            if (commandId == null)
+            {
+                return Fail($"Revit exposes no {commandName} command, so Dynamo cannot be started from here. Open it once from Manage > Dynamo.");
+            }
+            if (!app.CanPostCommand(commandId))
+            {
+                return Fail("Revit cannot start Dynamo right now: another command or dialog is active. Finish it and retry.");
+            }
+
+            app.PostCommand(commandId);
+
+            return Ok("Dynamo launch posted; it starts after this call returns. Poll status until model_reachable is true (typically 10-30 s).",
+                new Dictionary<string, object>
+                {
+                    { "launched", true },
+                    { "model_reachable", false },
+                    { "command", commandName },
+                });
         }
 
         private Dictionary<string, object> Open()
@@ -254,7 +339,7 @@ namespace RevitMCPCommandSet.Services.Dynamo
             if (model == null)
             {
                 return Fail(
-                    "Dynamo's model is not reachable, so a graph cannot be opened. Open Dynamo once from the Manage ribbon, then retry.",
+                    "Dynamo's model is not reachable, so a graph cannot be opened. Send op \"launch\" (or open Dynamo from Manage > Dynamo), wait until status reports model_reachable, then retry.",
                     new Dictionary<string, object> { { "accessors_tried", tried } });
             }
 
@@ -294,12 +379,27 @@ namespace RevitMCPCommandSet.Services.Dynamo
             object model = FindModel(out tried);
             if (model == null)
             {
-                return Fail("Dynamo's model is not reachable, so no graph can be run.",
+                return Fail("Dynamo's model is not reachable, so no graph can be run. Send op \"launch\" first.",
                     new Dictionary<string, object> { { "accessors_tried", tried } });
             }
 
             object workspace = CurrentWorkspace(model);
             if (workspace == null) return Fail("Dynamo has no current workspace to run.");
+
+            // "run" always evaluates the workspace that is OPEN. A path in the
+            // request used to be accepted and ignored, so a caller could believe it
+            // ran graph A while Dynamo ran graph B. Refuse the mismatch instead.
+            if (!string.IsNullOrEmpty(GraphPath))
+            {
+                PropertyInfo fileNameProp = workspace.GetType().GetProperty("FileName");
+                string openPath = fileNameProp == null ? null : fileNameProp.GetValue(workspace) as string;
+                if (!string.IsNullOrEmpty(openPath) &&
+                    !string.Equals(Path.GetFullPath(openPath), Path.GetFullPath(GraphPath), StringComparison.OrdinalIgnoreCase))
+                {
+                    return Fail($"The open Dynamo workspace is {openPath}, not {GraphPath}. Send op \"open\" with the path first.",
+                        new Dictionary<string, object> { { "current_workspace", WorkspaceName(workspace) }, { "current_path", openPath } });
+                }
+            }
 
             // Only a home workspace runs; a custom-node workspace has no Run.
             MethodInfo run = workspace.GetType()
@@ -314,12 +414,116 @@ namespace RevitMCPCommandSet.Services.Dynamo
                     new Dictionary<string, object> { { "current_workspace", WorkspaceName(workspace) } });
             }
 
+            // Captured BEFORE the run so a caller can tell a finished evaluation
+            // from one that has not started: EvaluationCount moves past this value.
+            int? before = EvaluationCount(workspace);
+
             run.Invoke(workspace, null);
 
             return Ok(
-                "Run requested. Dynamo evaluates asynchronously, so completion is not confirmed here — " +
-                "read the graph's own outputs or the Dynamo window to see the result.",
-                new Dictionary<string, object> { { "current_workspace", WorkspaceName(workspace) } });
+                "Run requested. Dynamo evaluates asynchronously; poll op \"eval_status\" until evaluation_count " +
+                "passes evaluation_count_before, then read problem_nodes for what went wrong.",
+                new Dictionary<string, object>
+                {
+                    { "current_workspace", WorkspaceName(workspace) },
+                    { "evaluation_count_before", before },
+                });
+        }
+
+        private static int? EvaluationCount(object workspace)
+        {
+            PropertyInfo property = workspace == null ? null : workspace.GetType().GetProperty("EvaluationCount");
+            object value = property == null ? null : property.GetValue(workspace);
+            return value is int count ? count : (int?)null;
+        }
+
+        private static string ReadString(object target, string property)
+        {
+            PropertyInfo p = target.GetType().GetProperty(property);
+            object v = p == null ? null : p.GetValue(target);
+            return v == null ? null : v.ToString();
+        }
+
+        /// <summary>
+        /// Where the open workspace stands after a run: how many evaluations it
+        /// has completed, whether the last one crashed, and every node that is
+        /// not in the plain Active state, with its messages.
+        /// </summary>
+        /// <remarks>
+        /// WHY THIS IS POLLED RATHER THAN AWAITED IN "run". Dynamo evaluates on
+        /// its own scheduler and marshals Revit API work back to Revit's main
+        /// thread. This handler IS the main thread while it runs, so waiting here
+        /// for the evaluation to finish would wait on a thread that is waiting on
+        /// us. The MCP server polls this op instead; each poll is its own event.
+        ///
+        /// Measured on Dynamo 3.6: a Python node that threw ended in State
+        /// "Warning" with the exception text in NodeInfos[0].Message, while the
+        /// run op had already answered "ok". Without this op that failure was
+        /// invisible to the caller.
+        /// </remarks>
+        private Dictionary<string, object> EvalStatus()
+        {
+            List<string> tried;
+            object model = FindModel(out tried);
+            if (model == null)
+            {
+                return Fail("Dynamo's model is not reachable.", new Dictionary<string, object> { { "accessors_tried", tried } });
+            }
+            object workspace = CurrentWorkspace(model);
+            if (workspace == null) return Fail("Dynamo has no current workspace.");
+
+            var problems = new List<Dictionary<string, object>>();
+            int total = 0;
+            PropertyInfo nodesProperty = workspace.GetType().GetProperty("Nodes");
+            var nodes = nodesProperty == null ? null : nodesProperty.GetValue(workspace) as System.Collections.IEnumerable;
+            if (nodes != null)
+            {
+                foreach (object node in nodes)
+                {
+                    total++;
+                    string state = ReadString(node, "State");
+                    if (state == "Active") continue;
+
+                    var messages = new List<string>();
+                    // Dynamo 2.13+ keeps per-node messages in NodeInfos (Info.Message);
+                    // older builds only had the ToolTipText string.
+                    PropertyInfo infosProperty = node.GetType().GetProperty("NodeInfos") ?? node.GetType().GetProperty("Infos");
+                    var infos = infosProperty == null ? null : infosProperty.GetValue(node) as System.Collections.IEnumerable;
+                    if (infos != null)
+                    {
+                        foreach (object info in infos)
+                        {
+                            string message = ReadString(info, "Message");
+                            if (!string.IsNullOrEmpty(message)) messages.Add(message);
+                        }
+                    }
+                    if (messages.Count == 0)
+                    {
+                        string tip = ReadString(node, "ToolTipText");
+                        if (!string.IsNullOrEmpty(tip)) messages.Add(tip);
+                    }
+
+                    problems.Add(new Dictionary<string, object>
+                    {
+                        { "name", ReadString(node, "Name") },
+                        { "id", ReadString(node, "GUID") },
+                        { "state", state },   // Dead = an input is unconnected; Warning/Error = it failed
+                        { "messages", messages },
+                    });
+                }
+            }
+
+            PropertyInfo crashProperty = workspace.GetType().GetProperty("HasRunWithoutCrash");
+            return Ok(
+                problems.Count == 0 ? $"All {total} nodes are Active." : $"{problems.Count} of {total} nodes are not Active.",
+                new Dictionary<string, object>
+                {
+                    { "current_workspace", WorkspaceName(workspace) },
+                    { "evaluation_count", EvaluationCount(workspace) },
+                    { "has_run_without_crash", crashProperty == null ? null : crashProperty.GetValue(workspace) },
+                    { "node_count", total },
+                    { "problem_nodes", problems },
+                });
         }
     }
 }

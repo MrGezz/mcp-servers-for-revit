@@ -54,7 +54,8 @@ $iscc = @(
     "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
     "$env:ProgramFiles\Inno Setup 6\ISCC.exe",
     "$env:LOCALAPPDATA\Programs\Inno Setup 7\ISCC.exe",
-    "${env:ProgramFiles(x86)}\Inno Setup 7\ISCC.exe"
+    "${env:ProgramFiles(x86)}\Inno Setup 7\ISCC.exe",
+    "$env:ProgramFiles\Inno Setup 7\ISCC.exe"
 ) | Where-Object { Test-Path $_ } | Select-Object -First 1
 
 if (-not $iscc) {
@@ -77,9 +78,13 @@ Ok "ISCC: $iscc"
 # ------------------------------------------------------------------- payload
 if (-not $SkipPackage) {
     Step 'Staging the payload'
-    $pkgArgs = @('-Configuration', $Configuration, '-Version', $Version, '-NoZip')
-    if ($Years)     { $pkgArgs += @('-Years', ($Years -join ',')) }
-    if ($SkipBuild) { $pkgArgs += '-SkipBuild' }
+    # A hashtable, not an array: splatting an ARRAY passes its items
+    # positionally, so '-Configuration' landed in -Configuration and 'Release'
+    # in -Years ("Cannot convert value Release to type System.Int32[]") and no
+    # Setup.exe was ever built.
+    $pkgArgs = @{ Configuration = $Configuration; Version = $Version; NoZip = $true }
+    if ($Years)     { $pkgArgs.Years = $Years }
+    if ($SkipBuild) { $pkgArgs.SkipBuild = $true }
     & (Join-Path $PSScriptRoot 'Package.ps1') @pkgArgs | Out-Null
     if ($LASTEXITCODE) { throw "Package.ps1 failed (exit $LASTEXITCODE)." }
 }

@@ -1,34 +1,21 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { withRevitConnection } from "../utils/ConnectionManager.js";
+import { callRevit } from "../utils/reply.js";
+import { RGB } from "../utils/schemas.js";
 
 export function registerManageGraphicsResourcesTool(server: McpServer) {
   server.tool(
     "manage_graphics_resources",
-    "Manage graphics resources in Revit: create or update line styles and fill patterns.",
+    "Update existing Revit line styles. Requires an active document. Returns the operation result.",
     {
-      action: z.enum(["line_style", "fill_pattern"]).describe("Resource type to manage: line_style or fill_pattern"),
-      name: z.string().describe("Name of the resource to create or update"),
+      action: z.enum(["line_style"]),
+      name: z.string(),
       properties: z.object({
-        color: z.object({
-          r: z.number().int().min(0).max(255),
-          g: z.number().int().min(0).max(255),
-          b: z.number().int().min(0).max(255),
-        }).optional().describe("RGB color"),
-        lineWeight: z.number().int().optional().describe("Line weight, applicable to line_style resources"),
-        linePattern: z.string().optional().describe("Line pattern name, applicable to line_style resources"),
-      }).optional().describe("Properties to apply to the resource"),
+        color: RGB.optional(),
+        lineWeight: z.number().int().optional().describe("Applicable to line_style"),
+        linePattern: z.string().optional().describe("Pattern name; applicable to line_style"),
+      }).optional(),
     },
-    async (args, extra) => {
-      const params = args;
-      try {
-        const response = await withRevitConnection(async (revitClient) => {
-          return await revitClient.sendCommand("manage_graphics_resources", params);
-        });
-        return { content: [{ type: "text", text: JSON.stringify(response, null, 2) }] };
-      } catch (error) {
-        return { content: [{ type: "text", text: `Manage graphics resources failed: ${error instanceof Error ? error.message : String(error)}` }] };
-      }
-    }
+    async (args) => callRevit("manage_graphics_resources", args)
   );
 }

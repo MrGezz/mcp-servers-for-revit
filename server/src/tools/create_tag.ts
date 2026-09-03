@@ -1,73 +1,43 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { withRevitConnection } from "../utils/ConnectionManager.js";
+import { callRevit } from "../utils/reply.js";
+import { Pt } from "../utils/schemas.js";
 
 export function registerCreateTagTool(server: McpServer) {
   server.tool(
     "create_tag",
-    "Create tag annotations on elements in the current Revit view. Supports tagging doors, windows, walls, rooms, and other elements with configurable tag type, orientation, leader, and location. All coordinates are in millimeters (mm).",
+    "Adds annotation tags to elements in the active Revit view (mm). tagTypeId -1 uses default type, viewId -1 uses active view. tagCategory: Door, Window, Wall, Room, Multi. Returns created tag ids.",
     {
       data: z
         .array(
           z.object({
-            elementId: z
-              .number()
-              .describe("Element ID of the element to tag"),
-            location: z
-              .object({
-                x: z.number().describe("X coordinate in mm"),
-                y: z.number().describe("Y coordinate in mm"),
-                z: z.number().describe("Z coordinate in mm"),
-              })
-              .describe("Tag placement location in mm"),
+            elementId: z.number(),
+            location: Pt,
             orientation: z
               .number()
               .optional()
               .default(0)
-              .describe("Tag orientation (0=Horizontal, 1=Vertical)"),
-            hasLeader: z
-              .boolean()
-              .optional()
-              .default(false)
-              .describe("Whether the tag has a leader line"),
+              .describe("0=Horizontal, 1=Vertical"),
+            hasLeader: z.boolean().optional().default(false),
             tagTypeId: z
               .number()
               .optional()
               .default(-1)
-              .describe("Element ID of the tag type. -1 for default"),
+              .describe("Tag type id; -1 for default"),
             tagCategory: z
               .string()
               .optional()
               .default("")
-              .describe("Tag category (Door, Window, Wall, Room, Multi)"),
+              .describe("Door, Window, Wall, Room, or Multi"),
             viewId: z
               .number()
               .optional()
               .default(-1)
-              .describe("Element ID of the view. -1 for active view"),
+              .describe("View id; -1 for active view"),
           })
         )
         .describe("Array of tags to create"),
     },
-    async (args, extra) => {
-      const params = args;
-      try {
-        const response = await withRevitConnection(async (revitClient) => {
-          return await revitClient.sendCommand("create_tag", params);
-        });
-        return { content: [{ type: "text", text: JSON.stringify(response, null, 2) }] };
-      } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Tag creation failed: ${
-                error instanceof Error ? error.message : String(error)
-              }`,
-            },
-          ],
-        };
-      }
-    }
+    async (args) => callRevit("create_tag", args)
   );
 }

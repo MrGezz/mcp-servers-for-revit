@@ -39,7 +39,7 @@ namespace RevitMCPCommandSet.Commands.Memory
                     if (string.IsNullOrWhiteSpace(action))
                     {
                         throw new ArgumentException(
-                            "An 'action' is required: read, query, write, stats, raw or clear.");
+                            "An 'action' is required: query, write, stats or clear.");
                     }
 
                     JObject payload = parameters["payload"] as JObject ?? new JObject();

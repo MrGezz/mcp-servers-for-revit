@@ -120,7 +120,10 @@ namespace RevitMCPCommandSet.Services.Views
                     }
                 }
 
-                string message = $"Successfully placed {viewportIds.Count} viewport(s) on sheets.";
+                bool anyPlaced = viewportIds.Count > 0;
+                string message = anyPlaced
+                    ? $"Successfully placed {viewportIds.Count} viewport(s) on sheets."
+                    : "No viewports were placed.";
                 if (_warnings.Count > 0)
                 {
                     message += "\n\nWarnings:\n  - " + string.Join("\n  - ", _warnings);
@@ -128,7 +131,7 @@ namespace RevitMCPCommandSet.Services.Views
 
                 Result = new AIResult<List<int>>
                 {
-                    Success = true,
+                    Success = anyPlaced,
                     Message = message,
                     Response = viewportIds,
                 };

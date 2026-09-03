@@ -37,9 +37,9 @@ namespace RevitMCPCommandSet.Services.MEP
           int requestedTypeId = data.TypeId;
 
           Level baseLevel = doc.FindNearestLevel(data.BaseLevel / 304.8);
-          double baseOffset = (data.BaseOffset + data.BaseLevel) / 304.8 - baseLevel.Elevation;
           if (baseLevel == null)
             continue;
+          double baseOffset = (data.BaseOffset + data.BaseLevel) / 304.8 - baseLevel.Elevation;
 
           FamilySymbol symbol = null;
           if (data.TypeId != -1 && data.TypeId != 0)
@@ -69,7 +69,8 @@ namespace RevitMCPCommandSet.Services.MEP
                     .FirstOrDefault(fs =>
                         fs.FamilyName.Equals(data.FamilyName, StringComparison.OrdinalIgnoreCase) &&
                         (string.IsNullOrEmpty(data.EquipmentType) ||
-                         fs.Name.Equals(data.EquipmentType, StringComparison.OrdinalIgnoreCase)));
+                         fs.Name.Equals(data.EquipmentType, StringComparison.OrdinalIgnoreCase)) &&
+                        fs.Category?.Name.Equals(categoryName, StringComparison.OrdinalIgnoreCase) == true);
               }
             }
 
@@ -80,7 +81,8 @@ namespace RevitMCPCommandSet.Services.MEP
                 symbol = fec
                     .OfClass(typeof(FamilySymbol))
                     .Cast<FamilySymbol>()
-                    .FirstOrDefault(fs => fs.IsActive);
+                    .FirstOrDefault(fs => fs.IsActive &&
+                        fs.Category?.Name.Equals(categoryName, StringComparison.OrdinalIgnoreCase) == true);
               }
             }
 
@@ -131,14 +133,17 @@ namespace RevitMCPCommandSet.Services.MEP
           }
         }
 
-        string message = $"Successfully created {elementIds.Count} equipment instance(s).";
+        bool created = elementIds.Count > 0;
+        string message = created
+            ? $"Successfully created {elementIds.Count} equipment instance(s)."
+            : "Nothing was created.";
         if (_warnings.Count > 0)
         {
           message += "\n\nWarnings:\n  - " + string.Join("\n  - ", _warnings);
         }
         Result = new AIResult<List<int>>
         {
-          Success = true,
+          Success = created,
           Message = message,
           Response = elementIds,
         };

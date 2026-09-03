@@ -66,28 +66,35 @@ namespace RevitMCPCommandSet.Services.MEP
                   numberParam.Set(data.Number);
               }
 
-              if (!string.IsNullOrEmpty(data.SpaceType))
+              if (!string.IsNullOrEmpty(data.Department))
               {
                 Parameter typeParam = space.get_Parameter(BuiltInParameter.ROOM_DEPARTMENT);
                 if (typeParam != null)
-                  typeParam.Set(data.SpaceType);
+                  typeParam.Set(data.Department);
               }
 
               elementIds.Add(space.Id.GetIntValue());
+            }
+            else
+            {
+              _warnings.Add($"Failed to create space at location ({data.Location.X}, {data.Location.Y}, {data.Location.Z}) on level '{level.Name}'.");
             }
 
             transaction.Commit();
           }
         }
 
-        string message = $"Successfully created {elementIds.Count} space(s).";
+        bool created = elementIds.Count > 0;
+        string message = created
+            ? $"Successfully created {elementIds.Count} space(s)."
+            : "Nothing was created.";
         if (_warnings.Count > 0)
         {
           message += "\n\nWarnings:\n  - " + string.Join("\n  - ", _warnings);
         }
         Result = new AIResult<List<int>>
         {
-          Success = true,
+          Success = created,
           Message = message,
           Response = elementIds,
         };

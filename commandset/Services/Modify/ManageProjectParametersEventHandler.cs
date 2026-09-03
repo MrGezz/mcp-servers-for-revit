@@ -64,24 +64,43 @@ namespace RevitMCPCommandSet.Services.Modify
                 parameters.Add(new
                 {
                     Name = def.Name,
+                    // 2023+ builds define REVIT2023_OR_GREATER AND REVIT2025_OR_GREATER, so
+                    // a second #elif on the latter could never be reached and every modern
+                    // build answered Group = "PG_DATA", Visible = true for every parameter.
 #if REVIT2023_OR_GREATER
                     ParameterType = def.GetDataType().ToString(),
-                    Group = "PG_DATA",
-                    Visible = true,
-#elif REVIT2025_OR_GREATER
-                    ParameterType = def.ParameterType.ToString(),
-                    Group = def.ParameterGroup.ToString(),
-                    Visible = def.Visible,
+                    Group = GroupLabel(def),
 #else
                     ParameterType = def.ParameterType.ToString(),
                     Group = def.ParameterGroup.ToString(),
-                    Visible = true,
 #endif
+                    Visible = (def as InternalDefinition)?.Visible ?? true,
                     Categories = categories
                 });
             }
             return new AIResult<object> { Success = true, Response = parameters };
         }
+
+#if REVIT2023_OR_GREATER
+        /// <summary>
+        /// Display label of the parameter's group ("Data", "Identity Data", ...), or ""
+        /// when the definition carries no group. ForgeTypeId groups replaced
+        /// BuiltInParameterGroup in the 2022+ API.
+        /// </summary>
+        private static string GroupLabel(Definition def)
+        {
+            try
+            {
+                var group = def.GetGroupTypeId();
+                if (group == null || string.IsNullOrEmpty(group.TypeId)) return string.Empty;
+                return LabelUtils.GetLabelForGroup(group);
+            }
+            catch
+            {
+                return string.Empty;
+            }
+        }
+#endif
 
         private AIResult<object> AddSharedParameters()
         {
@@ -91,13 +110,10 @@ namespace RevitMCPCommandSet.Services.Modify
                 throw new ArgumentException("params array is required for add action");
 
             var app = uiApp.Application;
+            app.SharedParametersFilename = SharedParamFile;
             var sharedParamFile = app.OpenSharedParameterFile();
             if (sharedParamFile == null)
-            {
-                sharedParamFile = app.OpenSharedParameterFile();
-                if (sharedParamFile == null)
-                    throw new Exception("Could not open shared parameter file. Ensure the path is configured in Revit options.");
-            }
+                throw new Exception($"Could not open shared parameter file at '{SharedParamFile}'.");
 
             var group = sharedParamFile.Groups.get_Item(ParamGroup ?? "General");
             if (group == null)
@@ -125,6 +141,7 @@ namespace RevitMCPCommandSet.Services.Modify
                     if (categoryNames != null && categoryNames.Count > 0)
                     {
                         var catSet = new CategorySet();
+                        var unresolvedCategories = new List<string>();
                         foreach (var catName in categoryNames)
                         {
                             // Category.GetCategory has no string-name overload in any version;
@@ -141,7 +158,11 @@ namespace RevitMCPCommandSet.Services.Modify
                             }
                             if (cat != null)
                                 catSet.Insert(cat);
+                            else
+                                unresolvedCategories.Add(catName);
                         }
+                        if (unresolvedCategories.Count > 0)
+                            throw new ArgumentException($"The following category names could not be resolved: {string.Join(", ", unresolvedCategories)}");
                         newBinding.Categories = catSet;
                     }
                     else

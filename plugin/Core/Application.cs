@@ -1,10 +1,11 @@
-﻿using System;
+using System;
+using Autodesk.Revit.ApplicationServices;
+using Autodesk.Revit.DB.Events;
 using Autodesk.Revit.UI;
 using System.Reflection;
 using System.Windows.Media.Imaging;
+using revit_mcp_plugin.Configuration;
 using revit_mcp_plugin.Utils;
-
-
 
 namespace revit_mcp_plugin.Core
 {
@@ -37,6 +38,15 @@ namespace revit_mcp_plugin.Core
                 mcp_settings_pushButtonData.Image = LoadRibbonImage("settings-16.png");
                 mcp_settings_pushButtonData.LargeImage = LoadRibbonImage("settings-32.png");
                 mcpPanel.AddItem(mcp_settings_pushButtonData);
+
+                // AUTO-START. Until now the socket only came up after a human clicked
+                // "Revit MCP Switch", so an MCP client on a freshly started Revit
+                // always failed its first call and the AI had to ask the user to press
+                // a button. ApplicationInitialized is the earliest point at which a
+                // UIApplication exists and Revit is in a valid API context — which
+                // ExternalEvent.Create (called for every command as it loads)
+                // requires — so the service is started there, not here.
+                application.ControlledApplication.ApplicationInitialized += OnApplicationInitialized;
             }
             catch (Exception ex)
             {
@@ -52,6 +62,68 @@ namespace revit_mcp_plugin.Core
             }
 
             return Result.Succeeded;
+        }
+
+        private static void OnApplicationInitialized(object sender, ApplicationInitializedEventArgs e)
+        {
+            Logger logger = null;
+            try
+            {
+                logger = new Logger();
+
+                if (!AutoStartEnabled(logger))
+                {
+                    logger.Info("Auto-start is disabled (settings.autoStart=false or REVIT_MCP_AUTOSTART=0); use the ribbon switch.");
+                    return;
+                }
+
+                var app = sender as Autodesk.Revit.ApplicationServices.Application;
+                if (app == null)
+                {
+                    logger.Warning("ApplicationInitialized sender is not an Application; auto-start skipped.");
+                    return;
+                }
+
+                SocketService service = SocketService.Instance;
+                if (service.IsRunning) return;
+
+                service.Initialize(new UIApplication(app));
+                service.Start();
+
+                if (service.IsRunning)
+                    logger.Info("Socket service auto-started on port {0} at Revit start-up.", service.Port);
+                else
+                    logger.Error("Socket service auto-start failed; use the ribbon switch after checking the log above.");
+            }
+            catch (Exception ex)
+            {
+                try { (logger ?? new Logger()).Error("Auto-start failed: {0}\n{1}", ex.Message, ex.StackTrace); }
+                catch { }
+            }
+        }
+
+        /// <summary>
+        /// REVIT_MCP_AUTOSTART=0 wins; otherwise the "settings.autoStart" value in
+        /// commandRegistry.json, which defaults to true when absent.
+        /// </summary>
+        private static bool AutoStartEnabled(Logger logger)
+        {
+            string env = Environment.GetEnvironmentVariable("REVIT_MCP_AUTOSTART");
+            if (string.Equals(env, "0", StringComparison.Ordinal) ||
+                string.Equals(env, "false", StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            try
+            {
+                var configManager = new ConfigurationManager(logger);
+                configManager.LoadConfiguration();
+                return configManager.Config?.Settings?.AutoStart ?? true;
+            }
+            catch (Exception ex)
+            {
+                logger.Warning("Could not read autoStart from the configuration ({0}); defaulting to on.", ex.Message);
+                return true;
+            }
         }
 
         /// <summary>
@@ -90,6 +162,15 @@ namespace revit_mcp_plugin.Core
 
         public Result OnShutdown(UIControlledApplication application)
         {
+            try
+            {
+                application.ControlledApplication.ApplicationInitialized -= OnApplicationInitialized;
+            }
+            catch (Exception)
+            {
+                // Unsubscribing is best effort.
+            }
+
             try
             {
                 if (SocketService.Instance.IsRunning)

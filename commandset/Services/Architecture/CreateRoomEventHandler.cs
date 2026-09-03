@@ -138,7 +138,9 @@ namespace RevitMCPCommandSet.Services.Architecture
 
                         if (level == null)
                         {
-                            // Skip if no level found
+                            // Record error and skip - no level exists in this document
+                            createdRooms.Add(new RoomResultInfo { Error = "No level found in document" });
+                            tx.RollBack();
                             continue;
                         }
 
@@ -158,8 +160,8 @@ namespace RevitMCPCommandSet.Services.Architecture
 
                         if (room == null)
                         {
-                            // If location-based creation failed, create an unplaced room
-                            // This can happen if the point is not inside an enclosed area
+                            // Point is not inside an enclosed area - record error and skip
+                            createdRooms.Add(new RoomResultInfo { Error = "No enclosing boundary at location" });
                             tx.RollBack();
                             continue;
                         }
@@ -209,7 +211,7 @@ namespace RevitMCPCommandSet.Services.Architecture
                         }
 
                         // Set limit offset if specified (convert mm to feet)
-                        if (roomInfo.LimitOffset > 0)
+                        if (roomInfo.LimitOffset != 0)
                         {
                             Parameter limitOffsetParam = room.get_Parameter(BuiltInParameter.ROOM_UPPER_OFFSET);
                             if (limitOffsetParam != null && !limitOffsetParam.IsReadOnly)
@@ -265,10 +267,13 @@ namespace RevitMCPCommandSet.Services.Architecture
                     }
                 }
 
+                int successCount = createdRooms.Count(r => string.IsNullOrEmpty(r.Error));
                 Result = new AIResult<List<RoomResultInfo>>
                 {
-                    Success = true,
-                    Message = $"Successfully created {createdRooms.Count} room(s)",
+                    Success = RoomData.Count == 0 || successCount > 0,
+                    Message = successCount == RoomData.Count
+                        ? $"Successfully created {successCount} room(s)"
+                        : $"Created {successCount} of {RoomData.Count} room(s)",
                     Response = createdRooms
                 };
             }
@@ -485,5 +490,6 @@ namespace RevitMCPCommandSet.Services.Architecture
         public string LevelName { get; set; }
         public double AreaMm2 { get; set; }
         public double PerimeterMm { get; set; }
+        public string Error { get; set; } // non-null when creation failed for this room
     }
 }

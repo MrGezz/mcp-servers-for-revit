@@ -83,16 +83,14 @@ namespace RevitMCPCommandSet.Services.MEP
               case "facebased":
               {
                 Element hostElem = doc.GetElement(ElementIdFactory.Create(data.HostId));
-                if (hostElem != null)
+                if (hostElem == null)
                 {
-                  Reference faceRef = FindClosestFace(hostElem, point);
-                  if (faceRef != null)
-                    instance = doc.Create.NewFamilyInstance(faceRef, point, XYZ.BasisX, symbol);
+                  _warnings.Add($"FaceBased placement requires a valid hostId; element {data.HostId} not found. Skipping.");
+                  break;
                 }
-                else
-                {
-                  instance = doc.Create.NewFamilyInstance(point, symbol, Autodesk.Revit.DB.Structure.StructuralType.NonStructural);
-                }
+                Reference faceRef = FindClosestFace(hostElem, point);
+                if (faceRef != null)
+                  instance = doc.Create.NewFamilyInstance(faceRef, point, XYZ.BasisX, symbol);
                 break;
               }
               case "workplane":
@@ -127,14 +125,17 @@ namespace RevitMCPCommandSet.Services.MEP
           }
         }
 
-        string message = $"Successfully placed {elementIds.Count} family instance(s).";
+        bool allFailed = elementIds.Count == 0 && _warnings.Count > 0;
+        string message = allFailed
+            ? "Failed to place any family instance(s)."
+            : $"Successfully placed {elementIds.Count} family instance(s).";
         if (_warnings.Count > 0)
         {
           message += "\n\nWarnings:\n  - " + string.Join("\n  - ", _warnings);
         }
         Result = new AIResult<List<int>>
         {
-          Success = true,
+          Success = !allFailed,
           Message = message,
           Response = elementIds,
         };

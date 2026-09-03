@@ -45,6 +45,8 @@ namespace RevitMCPCommandSet.Services.Views
                         return;
                     }
 
+                    List<string> warnings = new List<string>();
+
                     if (Properties["scale"] != null)
                     {
                         int scaleVal = Properties["scale"].Value<int>();
@@ -54,7 +56,8 @@ namespace RevitMCPCommandSet.Services.Views
                         }
                         catch (Autodesk.Revit.Exceptions.InvalidOperationException)
                         {
-                            // Scale is read-only when controlled by a view template; skip silently.
+                            // Scale is read-only when controlled by a view template; surface as warning.
+                            warnings.Add("Scale not changed: controlled by view template");
                         }
                     }
 
@@ -130,10 +133,14 @@ namespace RevitMCPCommandSet.Services.Views
 
                     trans.Commit();
 
+                    string message = "View properties updated successfully";
+                    if (warnings.Count > 0)
+                        message += ". Warnings: " + string.Join("; ", warnings);
+
                     Result = new AIResult<bool>
                     {
                         Success = true,
-                        Message = "View properties updated successfully",
+                        Message = message,
                         Response = true
                     };
                 }

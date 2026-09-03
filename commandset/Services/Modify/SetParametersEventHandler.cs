@@ -29,6 +29,11 @@ namespace RevitMCPCommandSet.Services.Modify
                     Result = new AIResult<bool> { Success = false, Message = $"Element {ElementId} not found" };
                     return;
                 }
+                var notFound = new List<string>();
+                var readOnly = new List<string>();
+                var rejected = new List<string>();
+                int setCount = 0;
+
                 using (var trans = new Transaction(Doc, "Set Parameters"))
                 {
                     trans.Start();
@@ -39,22 +44,77 @@ namespace RevitMCPCommandSet.Services.Modify
                         {
                             param = LookupBuiltInParameter(element, prop.Name);
                         }
-                        if (param != null && !param.IsReadOnly)
+                        if (param == null)
                         {
-                            var value = prop.Value;
-                            if (value.Type == JTokenType.String)
-                                param.Set(value.Value<string>());
-                            else if (value.Type == JTokenType.Integer)
-                                param.Set(value.Value<int>());
-                            else if (value.Type == JTokenType.Float)
-                                param.Set(value.Value<double>());
-                            else if (value.Type == JTokenType.Boolean)
-                                param.Set(value.Value<int>());
+                            notFound.Add(prop.Name);
+                            continue;
                         }
+                        if (param.IsReadOnly)
+                        {
+                            readOnly.Add(prop.Name);
+                            continue;
+                        }
+                        var value = prop.Value;
+                        bool wrote;
+                        if (value.Type == JTokenType.String)
+                            wrote = param.Set(value.Value<string>());
+                        else if (value.Type == JTokenType.Integer)
+                            wrote = param.Set(value.Value<int>());
+                        else if (value.Type == JTokenType.Float)
+                        {
+                            double d = value.Value<double>();
+#if REVIT2023_OR_GREATER
+                            bool isLength = param.Definition.GetDataType().Equals(SpecTypeId.Length);
+#else
+                            bool isLength = param.Definition.ParameterType == ParameterType.Length;
+#endif
+                            if (isLength)
+                                d /= 304.8;
+                            wrote = param.Set(d);
+                        }
+                        else if (value.Type == JTokenType.Boolean)
+                            wrote = param.Set(value.Value<bool>() ? 1 : 0);
+                        else
+                        {
+                            // null / array / object: nothing to write, and previously this
+                            // still counted as "set".
+                            rejected.Add($"{prop.Name} (unsupported value type {value.Type})");
+                            continue;
+                        }
+                        // Parameter.Set returns false when Revit refused the value (wrong
+                        // storage type, invalid for this element); count only real writes.
+                        if (wrote) setCount++;
+                        else rejected.Add($"{prop.Name} (Revit rejected the value)");
                     }
                     trans.Commit();
                 }
-                Result = new AIResult<bool> { Success = true, Response = true };
+
+                var skipped = new List<string>();
+                foreach (var n in notFound) skipped.Add($"{n} (not found)");
+                foreach (var r in readOnly) skipped.Add($"{r} (read-only)");
+                foreach (var x in rejected) skipped.Add(x);
+
+                if (setCount == 0 && skipped.Count > 0)
+                {
+                    Result = new AIResult<bool>
+                    {
+                        Success = false,
+                        Message = $"No parameters were set. Skipped: {string.Join(", ", skipped)}"
+                    };
+                }
+                else if (skipped.Count > 0)
+                {
+                    Result = new AIResult<bool>
+                    {
+                        Success = true,
+                        Response = true,
+                        Message = $"Warning: some parameters were skipped: {string.Join(", ", skipped)}"
+                    };
+                }
+                else
+                {
+                    Result = new AIResult<bool> { Success = true, Response = true };
+                }
             }
             catch (Exception ex)
             {

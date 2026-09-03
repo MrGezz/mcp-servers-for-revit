@@ -50,9 +50,14 @@ namespace RevitMCPCommandSet.Services.MEP
                 {
                     trans.Start();
 
-                    XYZ startPt = new XYZ(StartX / 304.8, StartY / 304.8, Level / 304.8);
-                    XYZ endPt = new XYZ(EndX / 304.8, EndY / 304.8, Level / 304.8);
+                    XYZ startPt = new XYZ(StartX / 304.8, StartY / 304.8, StartZ / 304.8);
+                    XYZ endPt = new XYZ(EndX / 304.8, EndY / 304.8, EndZ / 304.8);
                     double diameterFt = Diameter / 304.8;
+
+                    // The reference level is the one nearest the requested elevation (mm).
+                    // It used to be passed as InvalidElementId and the parameter ignored.
+                    Level refLevel = doc.FindNearestLevel(Level / 304.8);
+                    ElementId levelId = refLevel?.Id ?? ElementId.InvalidElementId;
 
                     List<int> elementIds = new List<int>();
 
@@ -72,7 +77,7 @@ namespace RevitMCPCommandSet.Services.MEP
                                 }
                             }
 
-                            Duct duct = VersionCompat.CreateDuct(doc, ductSystemType?.Id ?? ElementId.InvalidElementId, startPt, endPt, ElementId.InvalidElementId);
+                            Duct duct = VersionCompat.CreateDuct(doc, ductSystemType?.Id ?? ElementId.InvalidElementId, startPt, endPt, levelId);
                             if (duct != null)
                             {
                                 duct.get_Parameter(BuiltInParameter.RBS_CURVE_DIAMETER_PARAM)?.Set(diameterFt);
@@ -82,7 +87,7 @@ namespace RevitMCPCommandSet.Services.MEP
                         }
                         case "pipe":
                         {
-                            Pipe pipe = VersionCompat.CreatePipe(doc, ElementId.InvalidElementId, startPt, endPt, ElementId.InvalidElementId);
+                            Pipe pipe = VersionCompat.CreatePipe(doc, ElementId.InvalidElementId, startPt, endPt, levelId);
                             if (pipe != null)
                             {
                                 pipe.get_Parameter(BuiltInParameter.RBS_PIPE_DIAMETER_PARAM)?.Set(diameterFt);
@@ -92,7 +97,7 @@ namespace RevitMCPCommandSet.Services.MEP
                         }
                         case "conduit":
                         {
-                            var conduit = VersionCompat.CreateConduit(doc, ElementId.InvalidElementId, startPt, endPt, ElementId.InvalidElementId) as MEPCurve;
+                            var conduit = VersionCompat.CreateConduit(doc, ElementId.InvalidElementId, startPt, endPt, levelId) as MEPCurve;
                             if (conduit != null)
                             {
                                 conduit.get_Parameter(BuiltInParameter.RBS_CONDUIT_DIAMETER_PARAM)?.Set(diameterFt);
@@ -103,6 +108,12 @@ namespace RevitMCPCommandSet.Services.MEP
                         default:
                             Result = new AIResult<List<int>> { Success = false, Message = $"Unknown MEP type: {MEPType}. Use 'duct', 'pipe', or 'conduit'" };
                             return;
+                    }
+
+                    if (elementIds.Count == 0)
+                    {
+                        Result = new AIResult<List<int>> { Success = false, Message = $"Failed to create {MEPType} curve: element creation returned null" };
+                        return;
                     }
 
                     trans.Commit();

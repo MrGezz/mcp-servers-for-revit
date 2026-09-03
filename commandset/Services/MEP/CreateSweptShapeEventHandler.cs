@@ -46,15 +46,16 @@ namespace RevitMCPCommandSet.Services.MEP
             }
 
             ElementId catId = category.Id;
-            DirectShape ds = DirectShape.CreateElement(doc, catId);
 
             // Build sweep path from pathPoints
             if (data.PathPoints.Count < 2)
             {
               _warnings.Add("Swept shape requires at least 2 path points.");
-              transaction.Commit();
+              transaction.RollBack();
               continue;
             }
+
+            DirectShape ds = DirectShape.CreateElement(doc, catId);
 
             CurveLoop pathLoop = new CurveLoop();
             for (int i = 0; i < data.PathPoints.Count - 1; i++)
@@ -115,14 +116,17 @@ namespace RevitMCPCommandSet.Services.MEP
           }
         }
 
-        string message = $"Successfully created {elementIds.Count} swept shape(s).";
+        bool created = elementIds.Count > 0;
+        string message = created
+            ? $"Successfully created {elementIds.Count} swept shape(s)."
+            : "Nothing was created.";
         if (_warnings.Count > 0)
         {
           message += "\n\nWarnings:\n  - " + string.Join("\n  - ", _warnings);
         }
         Result = new AIResult<List<int>>
         {
-          Success = true,
+          Success = created,
           Message = message,
           Response = elementIds,
         };

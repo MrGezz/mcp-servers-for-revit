@@ -38,9 +38,12 @@ namespace RevitMCPCommandSet.Services.MEP
           int requestedTypeId = data.TypeId;
 
           Level baseLevel = doc.FindNearestLevel(data.BaseLevel / 304.8);
-          double baseOffset = (data.BaseOffset + data.BaseLevel) / 304.8 - baseLevel.Elevation;
           if (baseLevel == null)
+          {
+            _warnings.Add($"No level found near {data.BaseLevel}mm. Duct skipped.");
             continue;
+          }
+          double baseOffset = (data.BaseOffset + data.BaseLevel) / 304.8 - baseLevel.Elevation;
 
           DuctType ductType = null;
           if (data.TypeId != -1 && data.TypeId != 0)
@@ -81,13 +84,27 @@ namespace RevitMCPCommandSet.Services.MEP
           {
             transaction.Start();
 
+            MEPSystemClassification targetClassification;
+            switch (data.SystemType?.Trim())
+            {
+              case "Return Air":
+                targetClassification = MEPSystemClassification.ReturnAir;
+                break;
+              case "Exhaust Air":
+                targetClassification = MEPSystemClassification.ExhaustAir;
+                break;
+              default:
+                targetClassification = MEPSystemClassification.SupplyAir;
+                break;
+            }
+
             MEPSystemType mepSystemType;
             using (var fec = new FilteredElementCollector(doc))
             {
               mepSystemType = fec
                   .OfClass(typeof(MEPSystemType))
                   .Cast<MEPSystemType>()
-                  .FirstOrDefault(m => m.SystemClassification == MEPSystemClassification.SupplyAir);
+                  .FirstOrDefault(m => m.SystemClassification == targetClassification);
             }
 
             if (mepSystemType != null)
@@ -106,26 +123,47 @@ namespace RevitMCPCommandSet.Services.MEP
                 Parameter offsetParam = duct.get_Parameter(BuiltInParameter.RBS_OFFSET_PARAM);
                 if (offsetParam != null)
                   offsetParam.Set(baseOffset);
+
+                // Apply cross-section dimensions from caller-supplied width/height (mm -> feet)
+                if (ductType.Shape == ConnectorProfileType.Round)
+                {
+                  Parameter diamParam = duct.get_Parameter(BuiltInParameter.RBS_CURVE_DIAMETER_PARAM);
+                  if (diamParam != null && data.Width > 0)
+                    diamParam.Set(data.Width / 304.8);
+                }
+                else
+                {
+                  Parameter widthParam = duct.get_Parameter(BuiltInParameter.RBS_CURVE_WIDTH_PARAM);
+                  if (widthParam != null && data.Width > 0)
+                    widthParam.Set(data.Width / 304.8);
+                  Parameter heightParam = duct.get_Parameter(BuiltInParameter.RBS_CURVE_HEIGHT_PARAM);
+                  if (heightParam != null && data.Height > 0)
+                    heightParam.Set(data.Height / 304.8);
+                }
+
                 elementIds.Add(duct.Id.GetIntValue());
               }
             }
             else
             {
-              _warnings.Add("No MEPSystemType with Supply Air classification found. Duct not created.");
+              _warnings.Add($"No MEPSystemType with {targetClassification} classification found. Duct not created.");
             }
 
             transaction.Commit();
           }
         }
 
-        string message = $"Successfully created {elementIds.Count} duct(s).";
+        bool created = elementIds.Count > 0;
+        string message = created
+            ? $"Successfully created {elementIds.Count} duct(s)."
+            : "Nothing was created.";
         if (_warnings.Count > 0)
         {
           message += "\n\nWarnings:\n  - " + string.Join("\n  - ", _warnings);
         }
         Result = new AIResult<List<int>>
         {
-          Success = true,
+          Success = elementIds.Count > 0 || CreatedInfo.Count == 0,
           Message = message,
           Response = elementIds,
         };

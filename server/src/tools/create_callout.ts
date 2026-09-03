@@ -1,31 +1,22 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { withRevitConnection } from "../utils/ConnectionManager.js";
+import { callRevit } from "../utils/reply.js";
+import { ElementId } from "../utils/schemas.js";
 
 export function registerCreateCalloutTool(server: McpServer) {
   server.tool(
     "create_callout",
-    "Create a callout view from a host view in Revit with bounding box. All units in mm.",
+    "Create a callout view from a host view (mm). Requires a valid host view id and a Section ViewFamilyType in the project. Returns the element ID of the new callout view.",
     {
       name: z.string().optional().describe("Callout view name"),
-      hostViewId: z.number().int().describe("Host view ID"),
+      hostViewId: ElementId,
       boundingBox: z.object({
-        minX: z.number().describe("Min X in mm"),
-        minY: z.number().describe("Min Y in mm"),
-        maxX: z.number().describe("Max X in mm"),
-        maxY: z.number().describe("Max Y in mm"),
-      }).describe("Callout bounding box"),
+        minX: z.number(),
+        minY: z.number(),
+        maxX: z.number(),
+        maxY: z.number(),
+      }),
     },
-    async (args, extra) => {
-      const params = args;
-      try {
-        const response = await withRevitConnection(async (revitClient) => {
-          return await revitClient.sendCommand("create_callout", params);
-        });
-        return { content: [{ type: "text", text: JSON.stringify(response, null, 2) }] };
-      } catch (error) {
-        return { content: [{ type: "text", text: `Create callout failed: ${error instanceof Error ? error.message : String(error)}` }] };
-      }
-    }
+    async (args) => callRevit("create_callout", args)
   );
 }

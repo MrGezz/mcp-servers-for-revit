@@ -1,0 +1,51 @@
+# Line endings: LF in the repository, native on checkout, regardless of each
+# contributor's core.autocrlf. Without this file a checkout on a machine with
+# autocrlf=false commits CRLF, and files written by tools that emit LF show up
+# as "LF will be replaced by CRLF" warnings on every git command.
+* text=auto
+
+# Sources and configuration
+*.cs        text
+*.ts        text
+*.js        text
+*.mjs       text
+*.json      text
+*.md        text
+*.yml       text
+*.yaml      text
+*.xaml      text
+*.csproj    text
+*.props     text
+*.targets   text
+*.addin     text
+*.gitignore text
+*.gitattributes text
+
+# Read on Windows only; keep CRLF in the working tree there
+# (Windows PowerShell 5.1, Inno Setup, Visual Studio solution files).
+*.ps1       text eol=crlf
+*.iss       text eol=crlf
+*.cmd       text eol=crlf
+*.bat       text eol=crlf
+*.sln       text eol=crlf
+
+# Shell scripts must stay LF or the interpreter chokes on the CR.
+*.sh        text eol=lf
+
+# Dynamo graphs are JSON, but the Dynamo harness asserts that a read -> write
+# round trip is byte-identical, so git must never rewrite their line endings.
+*.dyn       -text
+*.dyf       -text
+
+# Binaries
+*.png       binary
+*.jpg       binary
+*.ico       binary
+*.dll       binary
+*.exe       binary
+*.pdb       binary
+*.zip       binary
+*.msi       binary
+*.rfa       binary
+*.rvt       binary
+*.rte       binary

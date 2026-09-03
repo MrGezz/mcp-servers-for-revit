@@ -35,6 +35,9 @@ namespace RevitMCPCommandSet.Commands.Access
                     // Set element count limit
                     _handler.Limit = limit;
 
+                    // Without this reset the reply is the PREVIOUS selection.
+                    _handler.ResetCompletion();
+
                     // Raise the external event and wait for completion
                     if (RaiseAndWaitForCompletion(15000))
                     {

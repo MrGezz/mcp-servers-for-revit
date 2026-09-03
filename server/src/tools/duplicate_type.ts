@@ -1,46 +1,16 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { withRevitConnection } from "../utils/ConnectionManager.js";
+import { callRevit } from "../utils/reply.js";
+import { ElementId } from "../utils/schemas.js";
 
 export function registerDuplicateTypeTool(server: McpServer) {
   server.tool(
     "duplicate_type",
-    "Duplicate an element type in Revit and assign a new name. Returns the new type element ID.",
+    "Duplicates an element type and assigns a new name. Returns the new type element ID.",
     {
-      typeId: z.number().int().describe("The element type ID to duplicate"),
-      newName: z.string().min(1).describe("The name for the new type"),
+      typeId: ElementId.describe("Element type ID to duplicate"),
+      newName: z.string().min(1),
     },
-    async (args, extra) => {
-      const params = {
-        typeId: args.typeId,
-        newName: args.newName,
-      };
-
-      try {
-        const response = await withRevitConnection(async (revitClient) => {
-          return await revitClient.sendCommand("duplicate_type", params);
-        });
-
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(response, null, 2),
-            },
-          ],
-        };
-      } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Duplicate type failed: ${
-                error instanceof Error ? error.message : String(error)
-              }`,
-            },
-          ],
-        };
-      }
-    }
+    async (args) => callRevit("duplicate_type", { typeId: args.typeId, newName: args.newName })
   );
 }

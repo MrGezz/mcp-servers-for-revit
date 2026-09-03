@@ -54,10 +54,10 @@
 ; ============================================================================
 
 #ifndef AppVersion
-  #define AppVersion "1.0.1"
+  #define AppVersion "1.0.2"
 #endif
 #ifndef PayloadDir
-  #define PayloadDir "..\dist\mcp-servers-for-revit 1.0.1"
+  #define PayloadDir "..\dist\mcp-servers-for-revit 1.0.2"
 #endif
 #ifndef OutDir
   #define OutDir "..\dist"
@@ -71,9 +71,9 @@ AppId={{C4E81F27-6B3A-4D95-9E1C-7A2F5D08B6E3}
 AppName=mcp-servers-for-revit
 AppVersion={#AppVersion}
 AppVerName=mcp-servers-for-revit {#AppVersion}
-AppPublisher=mcp-servers-for-revit
-AppPublisherURL=https://github.com/mcp-servers-for-revit/mcp-servers-for-revit
-AppSupportURL=https://github.com/mcp-servers-for-revit/mcp-servers-for-revit/issues
+AppPublisher=MrGezz
+AppPublisherURL=https://github.com/MrGezz/mcp-servers-for-revit
+AppSupportURL=https://github.com/MrGezz/mcp-servers-for-revit/issues
 ; NOT {autopf}. In an elevated install that is C:\Program Files, and a
 ; third-party Revit add-in has no business there - Program Files\Autodesk is
 ; where Autodesk's own signed products live. Only the uninstaller and the read-me
@@ -97,8 +97,8 @@ VersionInfoVersion={#AppVersion}.0
 VersionInfoProductVersion={#AppVersion}.0
 VersionInfoDescription=mcp-servers-for-revit Setup
 VersionInfoProductName=mcp-servers-for-revit
-VersionInfoCompany=mcp-servers-for-revit
-VersionInfoCopyright=MIT licensed. See LICENSE.
+VersionInfoCompany=MrGezz
+VersionInfoCopyright=Copyright (c) 2026 MrGezz. MIT licensed.
 VersionInfoOriginalFileName=mcp-servers-for-revit-{#AppVersion}-Setup.exe
 WizardStyle=modern
 Compression=lzma2/max
@@ -141,7 +141,7 @@ Name: "r2027"; Description: "Revit 2027"
 ; the AI client launches. Shipping it here is what lets the installer register
 ; a config that points at THIS install, instead of leaving the user to run
 ; "npx -y mcp-server-for-revit" and get whatever is published on npm.
-Name: "mcpserver"; Description: "MCP server (needs Node.js 18+)"; Types: custom
+Name: "mcpserver"; Description: "MCP server (needs Node.js 20+)"; Types: custom
 
 [Files]
 ; The add-in payload, one tree per Revit version, straight into that version's
@@ -173,7 +173,7 @@ Source: "{#PayloadDir}\READ ME FIRST.txt"; DestDir: "{app}"; Flags: ignoreversio
 Name: "registermcp"; Description: "Register the MCP server with Claude Desktop and Claude Code"; Components: mcpserver
 
 [Icons]
-Name: "{group}\mcp-servers-for-revit on GitHub"; Filename: "https://github.com/mcp-servers-for-revit/mcp-servers-for-revit"
+Name: "{group}\mcp-servers-for-revit on GitHub"; Filename: "https://github.com/MrGezz/mcp-servers-for-revit"
 Name: "{group}\Read me"; Filename: "{app}\READ ME FIRST.txt"
 
 [UninstallDelete]
@@ -316,7 +316,8 @@ end;
        edit made now is silently discarded when the app exits, so refusing is
        correct and the user is told to close it and re-run.
   ------------------------------------------------------------------------ }
-{ DEPENDENCY CHECK. Presence is not enough - the server needs Node 18+, and a
+{ DEPENDENCY CHECK. Presence is not enough - the server needs Node 20+ (the
+  floor server/package.json declares in "engines"), and a
   machine with Node 12 on PATH would otherwise pass a bare "is it there" test
   and then fail at runtime with a syntax error nobody can place.
 
@@ -358,15 +359,15 @@ begin
   if not WizardIsComponentSelected('mcpserver') then Exit;
 
   Major := NodeMajor(Raw);
-  if Major >= 18 then Exit;
+  if Major >= 20 then Exit;
 
   if Major < 0 then
     Msg := 'Node.js was not found on this PC.' + #13#10#13#10 +
-           'The MCP server is a Node program: without Node.js 18 or newer your AI' + #13#10 +
+           'The MCP server is a Node program: without Node.js 20 or newer your AI' + #13#10 +
            'client will not be able to start it. The Revit add-in itself does not' + #13#10 +
            'need Node and will work either way.'
   else
-    Msg := 'Node.js ' + Raw + ' was found, but the MCP server needs 18 or newer.' + #13#10#13#10 +
+    Msg := 'Node.js ' + Raw + ' was found, but the MCP server needs 20 or newer.' + #13#10#13#10 +
            'Setup will continue, but your AI client will not be able to start the' + #13#10 +
            'server until Node.js is upgraded.';
 
@@ -429,7 +430,7 @@ begin
     component whose dependency is missing invites an install that looks complete
     and does nothing; leaving it unticked with the reason on the page is honest.
     The user can still tick it by hand, and NextButtonClick explains the cost. }
-  if NodeMajor(Raw) >= 18 then
+  if NodeMajor(Raw) >= 20 then
     WizardSelectComponents('mcpserver');
 end;
 
@@ -533,8 +534,10 @@ begin
   if not WizardIsComponentSelected('mcpserver') then
     Result :=
       '  The MCP server component was not installed, so no client was' + #13#10 +
-      '  configured. Install it, or register the published package yourself:' + #13#10 +
-      '    claude mcp add --scope user mcp-server-for-revit -- cmd /c npx -y mcp-server-for-revit'
+      '  configured. Re-run Setup and tick "MCP server", or take the -server.zip' + #13#10 +
+      '  from the same release and register node <folder>\build\index.js yourself.' + #13#10 +
+      '  "npx -y mcp-server-for-revit" is the ORIGINAL project''s older package' + #13#10 +
+      '  and does not match this add-in.'
   else if WizardIsTaskSelected('registermcp') then
     Result :=
       '  Claude Desktop and Claude Code were pointed at the server installed' + #13#10 +
@@ -557,7 +560,8 @@ begin
       'Location: %APPDATA%\Autodesk\Revit\Addins\ (this user only).' + #13#10#13#10 +
       'IN REVIT' + #13#10 +
       '  Start Revit. If it asks about an unknown add-in, choose Always Load.' + #13#10 +
-      '  Then Add-Ins ribbon > Revit MCP Switch to start the server.' + #13#10#13#10 +
+      '  The MCP socket starts with Revit. The Revit MCP Switch on the Add-Ins' + #13#10 +
+      '  ribbon toggles it; Settings chooses which commands are enabled.' + #13#10#13#10 +
       'IN YOUR AI CLIENT' + #13#10 +
       McpClientSummary();
 end;

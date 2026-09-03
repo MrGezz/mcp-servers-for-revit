@@ -136,7 +136,10 @@ namespace RevitMCPCommandSet.Services.Architecture
                     }
                 }
 
-                string message = $"Successfully created {elementIds.Count} model curve(s)";
+                bool anyCreated = elementIds.Count > 0;
+                string message = anyCreated
+                    ? $"Successfully created {elementIds.Count} model curve(s)"
+                    : "Failed to create any model curves";
                 if (_warnings.Count > 0)
                 {
                     message += "\nWarnings:\n  " + string.Join("\n  ", _warnings);
@@ -144,7 +147,7 @@ namespace RevitMCPCommandSet.Services.Architecture
 
                 Result = new AIResult<List<int>>
                 {
-                    Success = true,
+                    Success = anyCreated,
                     Message = message,
                     Response = elementIds
                 };

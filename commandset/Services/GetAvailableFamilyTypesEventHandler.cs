@@ -32,6 +32,12 @@ namespace RevitMCPCommandSet.Services
         {
             try
             {
+                // Clear the previous call's outcome. ErrorMessage survives on the handler
+                // instance for the whole Revit session, so without this one failed call
+                // (an unknown category, say) made every later call fail with the same
+                // message - measured live on get_available_family_types.
+                ErrorMessage = null;
+                ResultFamilyTypes = null;
                 var doc = app.ActiveUIDocument.Document;
 
                 // Loadable families.
@@ -76,16 +82,23 @@ namespace RevitMCPCommandSet.Services
                         {
                             validCategoryIds.Add((int)bic);
                         }
+                        else
+                        {
+                            // An unknown name used to be dropped, and when every name was
+                            // unknown the filter disappeared: "OST_Wall" returned every
+                            // type in the project as if the filter had matched.
+                            string near = Enum.GetNames(typeof(BuiltInCategory))
+                                .FirstOrDefault(n => n.IndexOf(categoryName.Replace("OST_", string.Empty), StringComparison.OrdinalIgnoreCase) >= 0);
+                            ErrorMessage = $"Unknown BuiltInCategory name '{categoryName}'." + (near != null ? $" Did you mean '{near}'?" : string.Empty);
+                            return;
+                        }
                     }
 
-                    if (validCategoryIds.Any())
+                    filteredElements = filteredElements.Where(et =>
                     {
-                        filteredElements = filteredElements.Where(et =>
-                        {
-                            var categoryId = et.Category?.Id.GetValue();
-                            return categoryId != null && validCategoryIds.Contains((int)categoryId.Value);
-                        });
-                    }
+                        var categoryId = et.Category?.Id.GetValue();
+                        return categoryId != null && validCategoryIds.Contains((int)categoryId.Value);
+                    });
                 }
 
                 // Fuzzy name match (checks both family name and type name)

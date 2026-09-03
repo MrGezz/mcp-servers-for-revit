@@ -1,90 +1,29 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { withRevitConnection } from "../utils/ConnectionManager.js";
+import { callRevit } from "../utils/reply.js";
+import { Pt } from "../utils/schemas.js";
 
 export function registerCreatePointBasedElementTool(server: McpServer) {
   server.tool(
     "create_point_based_element",
-    "Create one or more point-based elements in Revit such as doors, windows, or furniture. Supports batch creation with detailed parameters including family type ID, position, dimensions, and level information. All units are in millimeters (mm).",
+    "Place point-based family instances (doors, windows, furniture, generic models) in mm. Give typeId (from get_available_family_types) or a category so a type can be found. Doors/windows need a host wall (auto-detected unless hostWallId). Returns the new element ids; nothing placed is an error.",
     {
       data: z
         .array(
           z.object({
-            name: z
-              .string()
-              .describe("Description of the element (e.g., door, window)"),
-            typeId: z
-              .number()
-              .optional()
-              .describe("The ID of the family type to create."),
-            locationPoint: z
-              .object({
-                x: z.number().describe("X coordinate"),
-                y: z.number().describe("Y coordinate"),
-                z: z.number().describe("Z coordinate"),
-              })
-              .describe(
-                "The position coordinates where the element will be placed"
-              ),
-            width: z.number().describe("Width of the element in mm"),
-            depth: z.number().optional().describe("Depth of the element in mm"),
-            height: z.number().describe("Height of the element in mm"),
-            baseLevel: z.number().describe("Base level height"),
-            baseOffset: z.number().describe("Offset from the base level"),
-            rotation: z
-              .number()
-              .optional()
-              .describe("Rotation angle in degrees (0-360)"),
-            hostWallId: z
-              .number()
-              .optional()
-              .describe(
-                "The ElementId of a specific wall to use as host for doors/windows. " +
-                "If not provided, the nearest wall will be auto-detected."
-              ),
-            facingFlipped: z
-              .boolean()
-              .optional()
-              .default(false)
-              .describe(
-                "Whether to flip the facing direction of the door/window. " +
-                "When true, the element faces the opposite side of the wall."
-              ),
+            category: z.string().optional().describe("OST_Doors, OST_Windows, OST_Furniture...; used to pick a type when typeId is omitted"),
+            typeId: z.number().optional().describe("Family type ElementId (preferred)"),
+            locationPoint: Pt,
+            height: z.number().describe("mm"),
+            baseLevel: z.number().describe("Base level elevation, mm"),
+            baseOffset: z.number().describe("mm"),
+            rotation: z.number().optional().describe("Degrees, non-hosted elements only"),
+            hostWallId: z.number().optional().describe("Wall ElementId for doors/windows"),
+            facingFlipped: z.boolean().optional().default(false),
           })
         )
-        .describe("Array of point-based elements to create"),
+        .min(1),
     },
-    async (args, extra) => {
-      const params = args;
-
-      try {
-        const response = await withRevitConnection(async (revitClient) => {
-          return await revitClient.sendCommand(
-            "create_point_based_element",
-            params
-          );
-        });
-
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(response, null, 2),
-            },
-          ],
-        };
-      } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Create point-based element failed: ${
-                error instanceof Error ? error.message : String(error)
-              }`,
-            },
-          ],
-        };
-      }
-    }
+    async (args) => callRevit("create_point_based_element", args)
   );
 }

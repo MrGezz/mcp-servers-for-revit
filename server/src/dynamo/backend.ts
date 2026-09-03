@@ -17,28 +17,28 @@
  *             this project ships no such endpoint and does not assume one.
  *
  * ---------------------------------------------------------------------------
+ * COLD START
+ * ---------------------------------------------------------------------------
+ * Dynamo's assemblies are in the Revit process from start-up, but its MODEL
+ * only exists once Dynamo has been opened. Until v1.0.1 that meant a human had
+ * to click Manage > Dynamo before any graph could be opened or run. The command
+ * set now has a `launch` op that posts Revit's own ID_VISUAL_PROGRAMMING_DYNAMO
+ * command — the exact equivalent of that click — and `ensureDynamoReady` below
+ * polls `status` until the model answers (measured: ~14 s on Revit 2026 /
+ * Dynamo 3.6). No user interaction is needed.
+ *
+ * ---------------------------------------------------------------------------
  * THE HTTP CONTRACT, IF YOU IMPLEMENT ONE
  * ---------------------------------------------------------------------------
- * Deliberately tiny, so it can sit in front of anything:
- *
- *   POST <REVIT_MCP_DYNAMO_HTTP_URL>
- *   Content-Type: application/json
- *   { "op": "status" | "open" | "run", ...operation arguments }
- *
- *   200 { "ok": true,  ... }        the operation succeeded
- *       { "ok": false, "message": "..." }   it did not
- *
- * `op` carries the verb rather than the URL path, which is what lets the two
- * backends be swapped without the tools knowing which is in play.
+ *   POST <REVIT_MCP_DYNAMO_HTTP_URL>   { "op": "status" | "launch" | "open" | "run", ... }
+ *   200 { "ok": true,  ... }  |  { "ok": false, "message": "..." }
  *
  * ---------------------------------------------------------------------------
  * WHY THERE IS NO DRY RUN
  * ---------------------------------------------------------------------------
- * Every other write in this project can be reasoned about as "do the thing, and
- * a transaction can undo it". A Dynamo graph cannot. It opens and commits its
- * own transactions, in its own order, and a run that half-completes leaves the
- * document in whatever state the graph reached. So `run` takes an explicit
- * confirm rather than pretending a rollback exists.
+ * A Dynamo graph opens and commits its own transactions, in its own order, so
+ * there is nothing to roll back into. `run` takes an explicit confirm rather
+ * than pretending a rollback exists.
  */
 
 import { withRevitConnection } from "../utils/ConnectionManager.js";
@@ -52,16 +52,19 @@ export interface BackendResult {
   data: unknown;
 }
 
-/**
- * An external Dynamo bridge, if the operator has one. Empty by default: with no
- * URL configured the "http" backend is simply absent, and `auto` resolves to
- * native only. No host, port or path is guessed — a bridge nobody configured is
- * not a bridge, and probing invented addresses produces confusing failures.
- */
-const HTTP_URL = process.env.REVIT_MCP_DYNAMO_HTTP_URL || "";
+/** Shape of the command set's `status` reply (fields are best-effort). */
+export interface DynamoStatusData {
+  ok?: boolean;
+  loaded?: boolean;
+  model_reachable?: boolean;
+  current_workspace?: string | null;
+  message?: string;
+  [key: string]: unknown;
+}
 
+const HTTP_URL = process.env.REVIT_MCP_DYNAMO_HTTP_URL || "";
 /** "auto" (default) | "native" | "http" */
-const CONFIGURED: string = (process.env.REVIT_MCP_DYNAMO_BACKEND || "auto").toLowerCase();
+const CONFIGURED = (process.env.REVIT_MCP_DYNAMO_BACKEND || "auto").toLowerCase();
 
 export function httpBackendConfigured(): boolean {
   return HTTP_URL.length > 0;
@@ -71,7 +74,7 @@ export function httpBackendUrl(): string {
   return HTTP_URL;
 }
 
-async function postJson(url: string, body: unknown, timeoutMs: number): Promise<{ status: number; json: unknown }> {
+async function postJson(url: string, body: unknown, timeoutMs: number): Promise<{ status: number; json: any }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -82,12 +85,10 @@ async function postJson(url: string, body: unknown, timeoutMs: number): Promise<
       signal: controller.signal,
     });
     const text = await response.text();
-    let json: unknown;
+    let json: any;
     try {
       json = JSON.parse(text);
     } catch {
-      // A bridge that answers with something other than JSON is misconfigured
-      // rather than absent; keep the body so the error can say what came back.
       json = { raw: text.slice(0, 2000) };
     }
     return { status: response.status, json };
@@ -96,7 +97,6 @@ async function postJson(url: string, body: unknown, timeoutMs: number): Promise<
   }
 }
 
-/** Send one op to the configured external bridge. */
 async function callHttp(op: string, payload: Record<string, unknown>, timeoutMs: number): Promise<BackendResult> {
   if (!HTTP_URL) {
     throw new Error(
@@ -105,35 +105,26 @@ async function callHttp(op: string, payload: Record<string, unknown>, timeoutMs:
     );
   }
   const r = await postJson(HTTP_URL, { op, ...payload }, timeoutMs);
-  const data = r.json as Record<string, unknown> | null;
+  const data = r.json;
   return { backend: "http", ok: r.status === 200 && data?.ok !== false, op, data };
 }
 
-/**
- * Send one op down this project's own plugin socket.
- *
- * The command set answers `dynamo_op` with the op in the parameters, mirroring
- * the single-verb shape the HTTP contract uses, so the two backends stay
- * swappable without the tools knowing which is in play.
- */
-async function callNative(op: string, payload: Record<string, unknown>): Promise<BackendResult> {
-  const data = await withRevitConnection(async (client) => client.sendCommand("dynamo_op", { op, ...payload }));
-  const record = data as Record<string, unknown> | null;
+async function callNative(op: string, payload: Record<string, unknown>, timeoutMs: number): Promise<BackendResult> {
+  // The command set honours timeoutMs for "run" (it used to accept and ignore the
+  // tool's timeout_seconds); the socket client's own 2-minute timeout is raised
+  // to match so a long run is not cut off on this side first.
+  const data = await withRevitConnection(async (client) =>
+    client.sendCommand("dynamo_op", { op, timeoutMs, ...payload }, Math.max(timeoutMs + 5000, 120000))
+  );
+  const record = data as { ok?: boolean } | null;
   return { backend: "native", ok: record?.ok !== false, op, data };
 }
 
 /**
- * Route one op to whichever backend is available.
- *
- * Loud failure, not silent degradation: when nothing answers, the error names
- * every path that was tried and what each needs. "Dynamo is unavailable" without
- * saying which channel was attempted is the least actionable message possible.
+ * Route one op to whichever backend is available. When nothing answers, the
+ * error names every path that was tried and what each needs.
  */
-export async function dynamoOp(
-  op: string,
-  payload: Record<string, unknown> = {},
-  timeoutMs = 120000
-): Promise<BackendResult> {
+export async function dynamoOp(op: string, payload: Record<string, unknown> = {}, timeoutMs = 120000): Promise<BackendResult> {
   const attempts: string[] = [];
 
   if (CONFIGURED === "http" || (CONFIGURED === "auto" && HTTP_URL)) {
@@ -147,7 +138,7 @@ export async function dynamoOp(
 
   if (CONFIGURED === "native" || CONFIGURED === "auto") {
     try {
-      return await callNative(op, payload);
+      return await callNative(op, payload, timeoutMs);
     } catch (error) {
       if (CONFIGURED === "native") throw error;
       attempts.push(`native: ${error instanceof Error ? error.message : String(error)}`);
@@ -157,10 +148,64 @@ export async function dynamoOp(
   throw new Error(
     `No live Dynamo backend answered "${op}".\n` +
       attempts.map((a) => `  - ${a}`).join("\n") +
-      `\n\nStart Revit with the mcp-servers-for-revit add-in loaded and the "Revit MCP Switch" ` +
-      `turned on. If you run your own bridge into Revit instead, point REVIT_MCP_DYNAMO_HTTP_URL at it. ` +
-      `Set REVIT_MCP_DYNAMO_BACKEND=native|http to pin one and get its error directly rather than this summary.`
+      `\n\nStart Revit with the mcp-servers-for-revit add-in loaded (it starts its server automatically; ` +
+      `otherwise switch on "Revit MCP Switch" on the Add-Ins ribbon). If you run your own bridge into Revit, ` +
+      `point REVIT_MCP_DYNAMO_HTTP_URL at it. Set REVIT_MCP_DYNAMO_BACKEND=native|http to pin one.`
   );
+}
+
+/** Read-only status query. */
+export async function dynamoStatus(): Promise<BackendResult & { data: DynamoStatusData }> {
+  const r = await dynamoOp("status", {}, 30000);
+  return { ...r, data: (r.data ?? {}) as DynamoStatusData };
+}
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+export interface ReadyResult {
+  reachable: boolean;
+  launched: boolean;
+  waitedMs: number;
+  status: DynamoStatusData;
+  launch?: unknown;
+}
+
+/**
+ * Make sure Dynamo's model is reachable, starting Dynamo when allowed.
+ *
+ * Returns as soon as `status` reports the model, or after `timeoutMs` (default
+ * 90 s — Dynamo start-up is 10–30 s on a typical workstation, longer on a cold
+ * disk cache). The poll interval is deliberately coarse: each poll is a socket
+ * round-trip into Revit's API thread.
+ */
+export async function ensureDynamoReady(options: { launch: boolean; timeoutMs?: number }): Promise<ReadyResult> {
+  const timeoutMs = options.timeoutMs ?? 90000;
+  const started = Date.now();
+  const first = await dynamoStatus();
+  if (first.data.model_reachable) return { reachable: true, launched: false, waitedMs: 0, status: first.data };
+  if (first.data.loaded === false) {
+    return { reachable: false, launched: false, waitedMs: Date.now() - started, status: first.data };
+  }
+  if (!options.launch) return { reachable: false, launched: false, waitedMs: Date.now() - started, status: first.data };
+
+  const launch = await dynamoOp("launch", {}, 30000);
+  if (!launch.ok) {
+    return { reachable: false, launched: false, waitedMs: Date.now() - started, status: first.data, launch: launch.data };
+  }
+
+  let last = first.data;
+  while (Date.now() - started < timeoutMs) {
+    await sleep(2500);
+    try {
+      last = (await dynamoStatus()).data;
+    } catch (error) {
+      last = { message: error instanceof Error ? error.message : String(error) };
+    }
+    if (last.model_reachable) {
+      return { reachable: true, launched: true, waitedMs: Date.now() - started, status: last, launch: launch.data };
+    }
+  }
+  return { reachable: false, launched: true, waitedMs: Date.now() - started, status: last, launch: launch.data };
 }
 
 /** Report which backends are reachable, without performing any action. */
@@ -181,10 +226,7 @@ export async function probeBackends(): Promise<{
   };
 
   try {
-    // Connect and immediately release. Deliberately sends NO command: say_hello
-    // opens a dialog in Revit and get_current_view_info needs an active view, so
-    // either would make a "is anything listening" probe intrusive or wrong.
-    // Establishing the socket is the whole question being asked.
+    // Connect and immediately release: establishing the socket is the whole question.
     await withRevitConnection(async () => true);
     out.native.reachable = true;
   } catch (error) {
@@ -193,7 +235,6 @@ export async function probeBackends(): Promise<{
 
   if (HTTP_URL) {
     try {
-      // `status` is the probe because it is the one op guaranteed read-only.
       const r = await postJson(HTTP_URL, { op: "status" }, 3000);
       out.http.reachable = r.status === 200;
       if (!out.http.reachable) out.http.detail = `responded HTTP ${r.status}`;

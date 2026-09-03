@@ -1,46 +1,22 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { withRevitConnection } from "../utils/ConnectionManager.js";
+import { callRevit } from "../utils/reply.js";
+import { ElementId } from "../utils/schemas.js";
 
 export function registerQueryGeometryTool(server: McpServer) {
   server.tool(
     "query_geometry",
-    "Query geometry information of a Revit element. Returns bounding box, solid count, and face details.",
+    "Returns bounding box (MinMm/MaxMm), solid count and face details for one element. viewId and detailLevel are optional. Areas in m2 (AreaM2, SurfaceAreaM2), volumes in m3 (VolumeM3).",
     {
-      elementId: z.number().int().describe("The element ID to query geometry for"),
-      viewId: z.number().int().optional().describe("Optional view ID for geometry computation"),
-      detailLevel: z.number().int().optional().describe("Optional detail level (0=Coarse, 1=Medium, 2=Fine)"),
+      elementId: ElementId,
+      viewId: ElementId.optional().describe("View for geometry computation"),
+      detailLevel: z.number().int().optional().describe("1=Coarse, 2=Medium, 3=Fine"),
     },
-    async (args, extra) => {
-      const params: any = { elementId: args.elementId };
+    async (args) => {
+      const params: Record<string, unknown> = { elementId: args.elementId };
       if (args.viewId !== undefined) params.viewId = args.viewId;
       if (args.detailLevel !== undefined) params.detailLevel = args.detailLevel;
-
-      try {
-        const response = await withRevitConnection(async (revitClient) => {
-          return await revitClient.sendCommand("query_geometry", params);
-        });
-
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(response, null, 2),
-            },
-          ],
-        };
-      } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Query geometry failed: ${
-                error instanceof Error ? error.message : String(error)
-              }`,
-            },
-          ],
-        };
-      }
+      return callRevit("query_geometry", params);
     }
   );
 }

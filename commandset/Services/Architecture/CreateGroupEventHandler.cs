@@ -76,7 +76,10 @@ namespace RevitMCPCommandSet.Services.Architecture
                     }
                 }
 
-                string message = $"Successfully created {createdGroups.Count} group(s)";
+                bool created = createdGroups.Count > 0;
+                string message = created
+                    ? $"Successfully created {createdGroups.Count} group(s)"
+                    : "Nothing was created.";
                 if (_warnings.Count > 0)
                 {
                     message += "\nWarnings:\n  " + string.Join("\n  ", _warnings);
@@ -84,7 +87,7 @@ namespace RevitMCPCommandSet.Services.Architecture
 
                 Result = new AIResult<List<GroupResult>>
                 {
-                    Success = true,
+                    Success = createdGroups.Count > 0,
                     Message = message,
                     Response = createdGroups
                 };

@@ -20,6 +20,8 @@
  */
 
 import {
+  addFunctionNode,
+  newGraph,
   DynDocument,
   LoadedGraph,
   readGraph,
@@ -132,6 +134,34 @@ function fixture(): LoadedGraph {
 // ---------------------------------------------------------------------------
 
 async function main(): Promise<void> {
+  section("new graph");
+  {
+    const g = newGraph("C:/anywhere/Fresh.dyn");
+    check("newGraph names the graph after the file", g.doc.Name === "Fresh");
+    check("newGraph has an empty Nodes array", Array.isArray(g.doc.Nodes) && g.doc.Nodes.length === 0);
+    check("newGraph validates clean", validate(g.doc).filter((p) => p.severity === "error").length === 0);
+    addPythonNode(g.doc, "OUT = 1");
+    check("newGraph accepts a node", g.doc.Nodes!.length === 1 && g.doc.View!.NodeViews!.length === 1);
+    check("...and still validates clean", validate(g.doc).filter((p) => p.severity === "error").length === 0);
+
+    const fnode = addFunctionNode(g.doc, "DSOffice.Data.OpenXMLExportExcel@string,string,var[][],int,int,bool,bool", {
+      inputs: ["filePath", "sheetName", "data", "startRow", "startColumn", "overWrite", "writeAsString"],
+      outputs: ["bool"],
+      defaults: ["startRow", "startColumn", "writeAsString"],
+      position: { x: 300, y: 0 },
+    });
+    check("addFunctionNode builds a DSFunction node", fnode.NodeType === "FunctionNode" && fnode.Inputs!.length === 7);
+    check("...marking defaulted inputs", fnode.Inputs![3].UsingDefaultValue === true && fnode.Inputs![2].UsingDefaultValue === false);
+    check("...named after the class and method on the canvas", g.doc.View!.NodeViews!.some((v) => v.Name === "Data.OpenXMLExportExcel"));
+    connect(g.doc, { node: "Python Script", port: "OUT" }, { node: "Data.OpenXMLExportExcel", port: "data" });
+    check("...and can be wired by port name", validate(g.doc).filter((p) => p.severity === "error").length === 0);
+    refuses(
+      "addFunctionNode refuses an input count that does not match the signature",
+      () => addFunctionNode(g.doc, "DSCore.List.Transpose@var[]..[]", { inputs: ["a", "b"] }),
+      "1 argument"
+    );
+  }
+
   section("lookup");
   {
     const g = fixture();

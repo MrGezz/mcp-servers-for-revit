@@ -221,7 +221,7 @@ namespace RevitMCPCommandSet.Services.Architecture
 
                 Result = new AIResult<List<LevelResultInfo>>
                 {
-                    Success = true,
+                    Success = (newCount > 0 || existingCount > 0),
                     Message = message,
                     Response = createdLevels
                 };

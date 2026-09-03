@@ -1,54 +1,20 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { withRevitConnection } from "../utils/ConnectionManager.js";
+import { callRevit } from "../utils/reply.js";
+import { ElementId } from "../utils/schemas.js";
 
 export function registerManageFamilyParametersTool(server: McpServer) {
   server.tool(
     "manage_family_parameters",
-    "Add, rename, remove, or set formulas for family parameters in a Revit family document.",
+    "Add, rename, remove, or set a formula for a parameter in the currently open family (.rfa). familyId only verifies a Family element exists in the active document; it does not select or open a different family. Returns success or failure.",
     {
-      action: z.enum(["add", "rename", "remove", "set_formula"]).describe("Action to perform: add, rename, remove, set_formula"),
-      familyId: z.number().int().describe("The family element ID"),
-      name: z.string().optional().describe("Parameter name (required for all actions except list)"),
-      newName: z.string().optional().describe("New name for rename action"),
-      formula: z.string().optional().describe("Formula expression for set_formula action"),
-      type: z.string().optional().describe("Parameter type for add action (e.g. 'IFC_TYPE', 'IFC_LENGTH', 'IFC_TEXT')"),
+      action: z.enum(["add", "rename", "remove", "set_formula"]),
+      familyId: ElementId,
+      name: z.string().optional(),
+      newName: z.string().optional(),
+      formula: z.string().optional(),
+      type: z.string().optional().describe("ForgeTypeId spec string, e.g. 'autodesk.spec.aec:length-2.0.0', 'autodesk.spec:spec.string-2.0.0'. Omit to default to Number."),
     },
-    async (args, extra) => {
-      const params: any = {
-        action: args.action,
-        familyId: args.familyId,
-      };
-      if (args.name !== undefined) params.name = args.name;
-      if (args.newName !== undefined) params.newName = args.newName;
-      if (args.formula !== undefined) params.formula = args.formula;
-      if (args.type !== undefined) params.type = args.type;
-
-      try {
-        const response = await withRevitConnection(async (revitClient) => {
-          return await revitClient.sendCommand("manage_family_parameters", params);
-        });
-
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(response, null, 2),
-            },
-          ],
-        };
-      } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Manage family parameters failed: ${
-                error instanceof Error ? error.message : String(error)
-              }`,
-            },
-          ],
-        };
-      }
-    }
+    async (args) => callRevit("manage_family_parameters", args)
   );
 }

@@ -65,10 +65,10 @@ public class SpaceCreationInfo
     public double BaseLevel { get; set; }
 
     /// <summary>
-    ///     Space type name
+    ///     Department string for the space
     /// </summary>
-    [JsonProperty("spaceType")]
-    public string SpaceType { get; set; }
+    [JsonProperty("department")]
+    public string Department { get; set; }
 
     /// <summary>
     ///     Additional options

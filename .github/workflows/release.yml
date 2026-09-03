@@ -20,7 +20,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 20
 
       # Revit 2025 is .NET 8; Revit 2026 and 2027 are .NET 10 (measured from the
       # TargetFrameworkAttribute on their RevitAPI.dll). Install both SDKs.
@@ -104,6 +104,18 @@ jobs:
               Write-Host "Warning: AddIn output not found: $addinDir"
             }
           }
+
+          # The MCP server that MATCHES this tag, for people who install the
+          # add-in from a ZIP rather than the Setup.exe. Without it their only
+          # documented route is "npx -y mcp-server-for-revit", which resolves to
+          # whatever is on the npm registry - and that is published from the
+          # upstream repository, not from this tag.
+          Push-Location server
+          npm prune --omit=dev
+          Pop-Location
+          $serverZip = "$outputDir/mcp-servers-for-revit-$version-server.zip"
+          Compress-Archive -Path "server/build", "server/package.json", "server/node_modules" -DestinationPath $serverZip
+          Write-Host "Created $serverZip"
         shell: pwsh
 
       - name: Create Release
@@ -114,7 +126,15 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  # DISABLED on this fork. The npm package name "mcp-server-for-revit" and its
+  # trusted-publishing grant belong to the upstream repository, so this job can
+  # only fail here (and marks every release run red). The server ships in the
+  # Setup.exe and as mcp-servers-for-revit-<version>-server.zip instead. To
+  # publish under your own npm name later: rename the package in
+  # server/package.json, register a Trusted Publisher for this repository and
+  # workflow on npmjs.com, and delete the `if: false` line.
   npm-publish:
+    if: false
     runs-on: ubuntu-latest
     needs: build
 

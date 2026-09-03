@@ -56,11 +56,19 @@ namespace RevitMCPCommandSet.Services
                     double topOffset = -1;  // ft
                     double baseOffset = -1; // ft
                     baseLevel = doc.FindNearestLevel(data.BaseLevel / 304.8);
+                    if (baseLevel == null)
+                    {
+                        _warnings.Add($"No level found near elevation {data.BaseLevel:F1}mm for category {data.Category}. Skipping.");
+                        continue;
+                    }
                     baseOffset = (data.BaseOffset + data.BaseLevel) / 304.8 - baseLevel.Elevation;
                     topLevel = doc.FindNearestLevel((data.BaseLevel + data.BaseOffset + data.Height) / 304.8);
-                    topOffset = (data.BaseLevel + data.BaseOffset + data.Height) / 304.8 - topLevel.Elevation;
-                    if (baseLevel == null)
+                    if (topLevel == null)
+                    {
+                        _warnings.Add($"No level found near top elevation {data.BaseLevel + data.BaseOffset + data.Height:F1}mm for category {data.Category}. Skipping.");
                         continue;
+                    }
+                    topOffset = (data.BaseLevel + data.BaseOffset + data.Height) / 304.8 - topLevel.Elevation;
 
                     // Step 2: Get family type
                     FamilySymbol symbol = null;

@@ -37,10 +37,19 @@ namespace RevitMCPCommandSet.Services.Annotation
                     trans.Start();
 
                     Revision revision = Revision.Create(doc);
+                    string descriptionNote = null;
 
                     if (!string.IsNullOrEmpty(RevisionName))
                     {
                         revision.Description = RevisionName;
+                        if (!string.IsNullOrEmpty(RevisionDescription))
+                        {
+                            descriptionNote = $" (the description '{RevisionDescription}' was not applied because the name parameter already sets the revision description)";
+                        }
+                    }
+                    else if (!string.IsNullOrEmpty(RevisionDescription))
+                    {
+                        revision.Description = RevisionDescription;
                     }
 
                     if (!string.IsNullOrEmpty(RevisionDate))
@@ -79,11 +88,6 @@ namespace RevitMCPCommandSet.Services.Annotation
                         }
                     }
 
-                    if (!string.IsNullOrEmpty(RevisionDescription) && string.IsNullOrEmpty(RevisionName))
-                    {
-                        revision.Description = RevisionDescription;
-                    }
-
                     int revisionId = revision.Id.GetIntValue();
 
                     trans.Commit();
@@ -91,7 +95,7 @@ namespace RevitMCPCommandSet.Services.Annotation
                     Result = new AIResult<int>
                     {
                         Success = true,
-                        Message = $"Revision '{revision.Description}' created successfully{numberNote}",
+                        Message = $"Revision '{revision.Description}' created successfully{numberNote}{descriptionNote}",
                         Response = revisionId
                     };
                 }

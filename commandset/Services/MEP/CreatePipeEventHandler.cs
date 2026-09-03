@@ -38,9 +38,9 @@ namespace RevitMCPCommandSet.Services.MEP
           int requestedTypeId = data.TypeId;
 
           Level baseLevel = doc.FindNearestLevel(data.BaseLevel / 304.8);
-          double baseOffset = (data.BaseOffset + data.BaseLevel) / 304.8 - baseLevel.Elevation;
           if (baseLevel == null)
             continue;
+          double baseOffset = (data.BaseOffset + data.BaseLevel) / 304.8 - baseLevel.Elevation;
 
           PipeType pipeType = null;
           if (data.TypeId != -1 && data.TypeId != 0)
@@ -60,10 +60,18 @@ namespace RevitMCPCommandSet.Services.MEP
           {
             using (var fec = new FilteredElementCollector(doc))
             {
-              pipeType = fec
-                  .OfClass(typeof(PipeType))
-                  .Cast<PipeType>()
-                  .FirstOrDefault();
+              var allPipeTypes = fec.OfClass(typeof(PipeType)).Cast<PipeType>().ToList();
+
+              if (!string.IsNullOrEmpty(data.PipeType))
+              {
+                pipeType = allPipeTypes.FirstOrDefault(p =>
+                    string.Equals(p.Name, data.PipeType, StringComparison.OrdinalIgnoreCase));
+              }
+
+              if (pipeType == null)
+              {
+                pipeType = allPipeTypes.FirstOrDefault();
+              }
             }
 
             if (pipeType == null)
@@ -84,10 +92,23 @@ namespace RevitMCPCommandSet.Services.MEP
             MEPSystemType mepSystemType;
             using (var fec = new FilteredElementCollector(doc))
             {
-              mepSystemType = fec
+              var allSystemTypes = fec
                   .OfClass(typeof(MEPSystemType))
                   .Cast<MEPSystemType>()
-                  .FirstOrDefault(m => m.SystemClassification == MEPSystemClassification.Sanitary);
+                  .ToList();
+
+              if (!string.IsNullOrWhiteSpace(data.SystemType))
+              {
+                mepSystemType = allSystemTypes
+                    .FirstOrDefault(m => string.Equals(m.Name, data.SystemType, StringComparison.OrdinalIgnoreCase))
+                  ?? allSystemTypes
+                    .FirstOrDefault(m => m.SystemClassification == MEPSystemClassification.Sanitary);
+              }
+              else
+              {
+                mepSystemType = allSystemTypes
+                    .FirstOrDefault(m => m.SystemClassification == MEPSystemClassification.Sanitary);
+              }
             }
 
             if (mepSystemType != null)
@@ -106,26 +127,32 @@ namespace RevitMCPCommandSet.Services.MEP
                 Parameter offsetParam = pipe.get_Parameter(BuiltInParameter.RBS_OFFSET_PARAM);
                 if (offsetParam != null)
                   offsetParam.Set(baseOffset);
+                Parameter diamParam = pipe.get_Parameter(BuiltInParameter.RBS_PIPE_DIAMETER_PARAM);
+                if (diamParam != null)
+                  diamParam.Set(data.Diameter / 304.8);
                 elementIds.Add(pipe.Id.GetIntValue());
               }
             }
             else
             {
-              _warnings.Add("No MEPSystemType with Sanitary classification found. Pipe not created.");
+              _warnings.Add("No matching MEP system type found. Pipe not created.");
             }
 
             transaction.Commit();
           }
         }
 
-        string message = $"Successfully created {elementIds.Count} pipe(s).";
+        bool created = elementIds.Count > 0;
+        string message = created
+            ? $"Successfully created {elementIds.Count} pipe(s)."
+            : "Nothing was created.";
         if (_warnings.Count > 0)
         {
           message += "\n\nWarnings:\n  - " + string.Join("\n  - ", _warnings);
         }
         Result = new AIResult<List<int>>
         {
-          Success = true,
+          Success = created,
           Message = message,
           Response = elementIds,
         };
